@@ -1,0 +1,26 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#7c6bff" />
+            <stop offset="100%" stop-color="#00d4aa" />
+        </linearGradient>
+    </defs>
+    <!-- The Open Book Framework -->
+    <path d="M100 160V60M100 160C80 160 40 150 40 130V50C40 70 80 80 100 80M100 160C120 160 160 150 160 130V50C160 70 120 80 100 80" stroke="url(#logoGrad)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <!-- Text Lines on Left Page -->
+    <path d="M55 95H85" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+    <path d="M55 110H85" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+    <path d="M55 125H85" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+    
+    <!-- Text Lines on Right Page -->
+    <path d="M115 95H145" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+    <path d="M115 110H145" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+    <path d="M115 125H145" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
+    
+    <!-- The Digital Spark / Inspiration Star -->
+    <path d="M100 45V25M115 35L100 25L85 35" stroke="#00d4aa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="100" cy="25" r="4" fill="#00d4aa">
+        <animate attributeName="r" values="3;5;3" dur="2s" repeatCount="indefinite" />
+    </circle>
+</svg>

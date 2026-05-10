@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pedagogy Dashboard | AI-Powered CBC Admin</title>
+    <!-- Use absolute paths for absolute reliability -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Syne:wght@800&display=swap" rel="stylesheet">
+    <link href="/style.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<div class="dashboard-layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2 class="logo">PEDAGOGY</h2>
+            <p id="userEmailDisplay" style="font-size:12px; opacity:0.7;">Loading email...</p>
+        </div>
+        <nav class="sidebar-nav" id="mainSidebarNav">
+            <button class="nav-btn active" data-target="view-sow">📅 SOW &amp; Lesson Plans</button>
+            <button class="nav-btn" data-target="view-planner">🗓️ Weekly Planner</button>
+            <button class="nav-btn" data-target="view-row">📖 Record of Work</button>
+            <button class="nav-btn" data-target="view-assess">📊 Assessment Tools</button>
+            <button class="nav-btn" data-target="view-project">🚀 Project Generator</button>
+            <button class="nav-btn" data-target="view-portfolio">📸 Portfolio Album</button>
+            <button class="nav-btn" data-target="view-chat">💬 Facilitator Community</button>
+            <div class="divider"></div>
+            <button class="nav-btn" data-target="view-profile">⚙️ Profile Settings</button>
+            <button class="nav-btn logout-btn" onclick="logout()">🚪 Log Out</button>
+            <div class="storage-widget">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="font-size:11px; font-weight:700;">Cloud Storage</span>
+                    <span id="storage-text" style="font-size:10px; opacity:0.7;">0 MB / 50 MB</span>
+                </div>
+                <div class="storage-bar-outer"><div id="storage-bar-inner" class="storage-bar-inner"></div></div>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div id="welcome-msg-container" style="margin-bottom: 20px;">
+            <h1 id="welcomeHeader" style="font-family:'Syne', sans-serif; font-size: 28px; margin:0;">Connecting to Pedagogy...</h1>
+        </div>
+
+        <!-- ── SOW & LESSON PLANS ── -->
+        <section id="view-sow" class="view-section active">
+            <div class="hero">
+                <div class="hero-badge">✦ KICD CBC Compliant 2026 ✦</div>
+                <h1>SOW &amp; Lesson Plan AI</h1>
+                <p>Generate professional, learner-centered documents or download instant templates.</p>
+            </div>
+
+            <div class="card">
+                <div class="radio-pills">
+                    <div class="radio-pill"><input type="radio" name="gentype-sow" id="r-sow" value="sow" checked><label for="r-sow">📅 Scheme of Work</label></div>
+                    <div class="radio-pill"><input type="radio" name="gentype-sow" id="r-plan" value="plan"><label for="r-plan">📝 Lesson Plan</label></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="mode-toggle">
+                    <button class="mode-btn active" id="btn-template-sow" onclick="setOutputMode('template')">📋 Blank Template</button>
+                    <button class="mode-btn" id="btn-ai-sow" onclick="setOutputMode('ai')">⚡ Full AI Generate</button>
+                </div>
+                <div class="input-grid" style="margin-top:20px;">
+                    <div class="input-group">
+                        <label>Grade Level</label>
+                        <select id="gradeSelect-sow" onchange="updateTerms('sow')">
+                            <optgroup label="Pre-Primary"><option value="PP1">PP1</option><option value="PP2">PP2</option></optgroup>
+                            <optgroup label="Lower Primary"><option value="Grade 1">Grade 1</option><option value="Grade 2">Grade 2</option><option value="Grade 3">Grade 3</option></optgroup>
+                            <optgroup label="Upper Primary"><option value="Grade 4">Grade 4</option><option value="Grade 5">Grade 5</option><option value="Grade 6">Grade 6</option></optgroup>
+                            <optgroup label="Junior School (JSS)"><option value="Grade 7">Grade 7</option><option value="Grade 8" selected>Grade 8</option><option value="Grade 9">Grade 9</option></optgroup>
+                            <optgroup label="Senior School (SSS)"><option value="Grade 10">Grade 10</option><option value="Grade 11">Grade 11</option><option value="Grade 12">Grade 12</option></optgroup>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label id="termLabel-sow">Term</label>
+                        <select id="termSelect-sow">
+                            <option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="input-group" style="margin-top:14px;">
+                    <label>Subject / Learning Area</label>
+                    <div class="suggest-row">
+                        <input type="text" id="sow-subject" value="Integrated Science">
+                        <button class="suggest-btn" onclick="suggestField('sow-subject','subject','sow')">✨ Suggest</button>
+                    </div>
+                    <div class="suggest-bubble" id="bubble-sow-subject"></div>
+                </div>
+                <div class="input-group" style="margin-top:14px;">
+                    <label>Strand / Sub-Strand</label>
+                    <div class="suggest-row">
+                        <input type="text" id="sow-strand" placeholder="e.g. Interactions in the Environment">
+                        <button class="suggest-btn" onclick="suggestField('sow-strand','strand','sow')">✨ Suggest</button>
+                    </div>
+                    <div class="suggest-bubble" id="bubble-sow-strand"></div>
+                </div>
+            </div>
+
+            <div class="card" id="sow-extra-card">
+                <textarea id="extra-sow" rows="2" placeholder="Extra instructions for AI..."></textarea>
+                <button class="btn-generate" onclick="generateDocument()">⚡ Generate AI Content</button>
+            </div>
+            <div class="card" id="sow-template-card" style="display:none;">
+                <button class="btn-generate" onclick="downloadTemplate()">📋 Download Blank Template</button>
+            </div>
+        </section>
+
+        <!-- ── WEEKLY PLANNER ── -->
+        <section id="view-planner" class="view-section">
+            <div class="hero"><h1>Weekly Planner</h1><p>Organize your teaching week. Click a slot to add a lesson or activity.</p></div>
+            <div class="card" style="padding:0; overflow:hidden;">
+                <table class="planner-table">
+                    <thead>
+                        <tr><th>Time</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th></tr>
+                    </thead>
+                    <tbody id="planner-body">
+                        <!-- Filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="card">
+                <button class="btn-generate" onclick="savePlanner()">💾 Save Weekly Plan</button>
+            </div>
+        </section>
+
+        <!-- ── RECORD OF WORK ── -->
+        <section id="view-row" class="view-section">
+            <div class="hero"><h1>Record of Work</h1><p>KICD-compliant register for tracking curriculum coverage.</p></div>
+            <div class="card">
+                <div class="input-grid">
+                    <div class="input-group"><label>Grade Level</label>
+                        <select id="gradeSelect-row" onchange="updateTerms('row')">
+                            <option value="Grade 7">Grade 7</option><option value="Grade 8" selected>Grade 8</option>
+                        </select>
+                    </div>
+                    <div class="input-group"><label id="termLabel-row">Term</label>
+                        <select id="termSelect-row"><option value="1">Term 1</option></select>
+                    </div>
+                </div>
+                <div class="input-group" style="margin-top:14px;"><label>Subject</label><input type="text" id="row-subject" value="Integrated Science"></div>
+                <button class="btn-generate" style="margin-top:20px;" onclick="downloadROWTemplate()">📋 Download Blueprint Register</button>
+            </div>
+        </section>
+
+        <!-- ── ASSESSMENT TOOLS ── -->
+        <section id="view-assess" class="view-section">
+            <div class="hero"><h1>Assessment Suite</h1><p>Professional tools for formative and summative CBC assessment.</p></div>
+            <div class="card">
+                <label>Select Tool Type</label>
+                <select id="assess-tool-type" onchange="onAssessTypeChange()" style="margin-bottom:20px;">
+                    <option value="rubric">📊 Rubric (with Descriptors)</option>
+                    <option value="checklist">✅ Observation Checklist</option>
+                    <option value="anecdotal">📔 Anecdotal Record (Individual)</option>
+                    <option value="peer">🤝 Peer Assessment Guide</option>
+                    <option value="oral">🗣️ Oral Questioning Framework</option>
+                    <option value="self">🧘 Self-Assessment Journal</option>
+                </select>
+
+                <div id="assess-common-inputs">
+                    <div class="input-group"><label>Grade &amp; Subject</label><input type="text" id="assess-grade-subject" value="Grade 8 Science"></div>
+                    <div class="input-group" style="margin-top:14px;">
+                        <label>Focus Topic / Outcome</label>
+                        <div class="suggest-row">
+                            <input type="text" id="assess-topic" placeholder="e.g. Human Digestive System">
+                            <button class="suggest-btn" onclick="suggestField('assess-topic','strand','assess')">✨ Suggest</button>
+                        </div>
+                        <div class="suggest-bubble" id="bubble-assess-topic"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <button class="btn-generate" onclick="handleAssessmentGeneration()">⚡ Generate Assessment Tool</button>
+            </div>
+        </section>
+
+        <!-- ── MWALIMU COMMUNITY CHAT ── -->
+        <section id="view-chat" class="view-section">
+            <div class="hero"><h1>Pedagogy Connect</h1><p>Engage with facilitators or share updates with parents.</p></div>
+            <div class="card" style="padding:0; overflow:hidden;">
+                <div class="chat-channels">
+                    <button class="channel-btn active" id="btn-chan-staff" onclick="setChatChannel('staff')"># Staff Room</button>
+                    <button class="channel-btn" id="btn-chan-parents" onclick="setChatChannel('parents')"># Parents Hub</button>
+                </div>
+                <div class="chat-container" style="border-radius:0;">
+                    <div id="chat-messages" class="chat-messages">
+                        <div class="chat-info">Selecting channel...</div>
+                    </div>
+                    <div class="chat-input-row">
+                        <input type="text" id="chat-input" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+                        <button onclick="sendChatMessage()">Send ↗</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── PROJECT GENERATOR ── -->
+        <section id="view-project" class="view-section">
+            <div class="hero"><h1>Project Generator</h1><p>Create step-by-step CBC project guides with blank mark sheets.</p></div>
+            <div class="card">
+                <div class="input-grid">
+                    <div class="input-group"><label>Project Title</label><input type="text" id="proj-title" placeholder="e.g. Sustainable Waste Management"></div>
+                    <div class="input-group"><label>Time Frame</label><input type="text" id="proj-time" value="4 Weeks"></div>
+                </div>
+                <button class="btn-generate" style="margin-top:20px;" onclick="generateProject()">⚡ Generate Project Guide</button>
+            </div>
+        </section>
+
+        <!-- ── PORTFOLIO ALBUM ── -->
+        <section id="view-portfolio" class="view-section">
+            <div class="hero"><h1>Portfolio Album</h1><p>Evidence of learner competencies and project achievements.</p></div>
+            <div class="card">
+                <div class="input-grid">
+                    <div class="input-group"><label>Learner Name</label><input type="text" id="port-student"></div>
+                    <div class="input-group"><label>Project Title</label><input type="text" id="port-title"></div>
+                </div>
+                <div class="input-group" style="margin-top:14px;"><label>Description of Evidence</label><textarea id="port-description" rows="3"></textarea></div>
+                <div class="input-group" style="margin-top:14px;"><label>Upload Evidence (Photos)</label><input type="file" id="port-photos" multiple accept="image/*"></div>
+                <button class="btn-generate" style="margin-top:16px;" onclick="addPortfolioEntry()">+ Add to Portfolio</button>
+            </div>
+            <div id="portfolio-grid" class="portfolio-grid"></div>
+        </section>
+
+        <!-- ── PROFILE SETTINGS ── -->
+        <section id="view-profile" class="view-section">
+            <div class="hero"><h1>Profile</h1><p>Update your facilitator and institutional details.</p></div>
+            <div class="card">
+                <div class="input-group"><label>Full Name</label><input type="text" id="profile-teacher"></div>
+                <div class="input-group" style="margin-top:14px;"><label>School Name</label><input type="text" id="profile-school"></div>
+                <button class="btn-generate" style="margin-top:20px;" onclick="saveProfile()">💾 Save Profile</button>
+                <p id="profile-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Profile Updated</p>
+            </div>
+        </section>
+
+        <!-- Preview & Downloads -->
+        <div id="progress-wrap" style="display:none;">
+            <div id="progress-bar-outer"><div id="progress-bar-inner"></div></div>
+            <p id="progress-label">Processing...</p>
+        </div>
+        <div id="download-bar" style="display:none;">
+            <div class="download-btns">
+                <button class="dl-btn dl-html" onclick="downloadHTML()">🌐 HTML</button>
+                <button class="dl-btn dl-xlsx" onclick="downloadDocx()">📝 Word (.docx)</button>
+                <button class="dl-btn dl-print" onclick="window.print()">🖨️ Print / PDF</button>
+            </div>
+        </div>
+        <div id="preview-area" style="display:none;"></div>
+
+    </main>
+</div>
+<script src="/script.js"></script>
+</body>
+</html>
