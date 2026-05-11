@@ -339,16 +339,18 @@ input:focus, select:focus, textarea:focus {
 /* Preview Area */
 #preview-area {
     background: white;
-    color: black;
-    padding: 50px;
-    border-radius: 20px;
+    color: #1a1a1a;
+    padding: 40px;
+    border-radius: 12px;
     margin-top: 30px;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-    font-family: Arial, sans-serif;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    font-family: 'Times New Roman', serif;
+    overflow-x: auto; /* Fix overflow */
+    max-width: 100%;
 }
-#preview-area table { border-collapse: collapse; width: 100%; margin: 20px 0; }
-#preview-area th, #preview-area td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-#preview-area th { background: #f8f9fa; }
+#preview-area table { border-collapse: collapse; width: 100%; margin: 20px 0; border: 1.5px solid #000; }
+#preview-area th, #preview-area td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 13px; }
+#preview-area th { background: #fff; font-weight: bold; } /* No background color */
 
 /* Download Bar */
 .download-btns { display: flex; gap: 10px; margin-top: 20px; }

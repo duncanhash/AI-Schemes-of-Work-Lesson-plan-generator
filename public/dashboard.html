@@ -85,18 +85,14 @@
                     </div>
                 </div>
                 <div class="input-group" style="margin-top:14px;">
-                    <label>Subject / Learning Area</label>
-                    <div class="suggest-row">
-                        <input type="text" id="sow-subject" value="Integrated Science">
-                        <button class="suggest-btn" onclick="suggestField('sow-subject','subject','sow')">✨ Suggest</button>
-                    </div>
-                    <div class="suggest-bubble" id="bubble-sow-subject"></div>
+                    <label>Subject / Learning Area (Required)</label>
+                    <input type="text" id="sow-subject" value="Integrated Science" required>
                 </div>
                 <div class="input-group" style="margin-top:14px;">
-                    <label>Strand / Sub-Strand</label>
+                    <label>Strands / Sub-strands Range (Required)</label>
                     <div class="suggest-row">
-                        <input type="text" id="sow-strand" placeholder="e.g. Interactions in the Environment">
-                        <button class="suggest-btn" onclick="suggestField('sow-strand','strand','sow')">✨ Suggest</button>
+                        <textarea id="sow-strand" placeholder="Enter strands or fetch from KICD..." required rows="2"></textarea>
+                        <button class="suggest-btn" style="height:fit-content;" onclick="fetchStrands()">✨ Fetch KICD Strands</button>
                     </div>
                     <div class="suggest-bubble" id="bubble-sow-strand"></div>
                 </div>
@@ -165,9 +161,9 @@
                 <div id="assess-common-inputs">
                     <div class="input-group"><label>Grade &amp; Subject</label><input type="text" id="assess-grade-subject" value="Grade 8 Science"></div>
                     <div class="input-group" style="margin-top:14px;">
-                        <label>Focus Topic / Outcome</label>
+                        <label>Focus Topic / Outcome (Brainstorming ✨)</label>
                         <div class="suggest-row">
-                            <input type="text" id="assess-topic" placeholder="e.g. Human Digestive System">
+                            <input type="text" id="assess-topic" placeholder="e.g. Human Digestive System" required>
                             <button class="suggest-btn" onclick="suggestField('assess-topic','strand','assess')">✨ Suggest</button>
                         </div>
                         <div class="suggest-bubble" id="bubble-assess-topic"></div>
@@ -204,8 +200,34 @@
             <div class="hero"><h1>Project Generator</h1><p>Create step-by-step CBC project guides with blank mark sheets.</p></div>
             <div class="card">
                 <div class="input-grid">
-                    <div class="input-group"><label>Project Title</label><input type="text" id="proj-title" placeholder="e.g. Sustainable Waste Management"></div>
+                    <div class="input-group"><label>Project Title (Brainstorming ✨)</label>
+                        <div class="suggest-row">
+                            <input type="text" id="proj-title" placeholder="e.g. Sustainable Waste Management" required>
+                            <button class="suggest-btn" onclick="suggestField('proj-title','topic','project')">✨ Suggest</button>
+                        </div>
+                        <div class="suggest-bubble" id="bubble-proj-title"></div>
+                    </div>
+                    <div class="input-group"><label>Grade Level</label><input type="text" id="proj-grade" value="Grade 8"></div>
+                </div>
+                <div class="input-grid" style="margin-top:14px;">
+                    <div class="input-group"><label>Subject Area</label><input type="text" id="proj-subject" value="Science & Technology"></div>
                     <div class="input-group"><label>Time Frame</label><input type="text" id="proj-time" value="4 Weeks"></div>
+                </div>
+                <div class="input-group" style="margin-top:14px;">
+                    <label>Specific Learning Outcomes (Brainstorming ✨)</label>
+                    <div class="suggest-row">
+                        <textarea id="proj-outcomes" rows="2" placeholder="What should learners achieve?" required></textarea>
+                        <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('proj-outcomes','outcomes','project')">✨ Suggest</button>
+                    </div>
+                    <div class="suggest-bubble" id="bubble-proj-outcomes"></div>
+                </div>
+                <div class="input-group" style="margin-top:14px;">
+                    <label>Required Resources (Brainstorming ✨)</label>
+                    <div class="suggest-row">
+                        <textarea id="proj-resources" rows="2" placeholder="List of materials..."></textarea>
+                        <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('proj-resources','resources','project')">✨ Suggest</button>
+                    </div>
+                    <div class="suggest-bubble" id="bubble-proj-resources"></div>
                 </div>
                 <button class="btn-generate" style="margin-top:20px;" onclick="generateProject()">⚡ Generate Project Guide</button>
             </div>
@@ -232,6 +254,11 @@
             <div class="card">
                 <div class="input-group"><label>Full Name</label><input type="text" id="profile-teacher"></div>
                 <div class="input-group" style="margin-top:14px;"><label>School Name</label><input type="text" id="profile-school"></div>
+                <div class="input-group" style="margin-top:14px;">
+                    <label>Your Subjects (Max 2)</label>
+                    <input type="text" id="profile-subjects" placeholder="e.g. Science, Mathematics">
+                    <p style="font-size:11px; color:var(--muted); margin-top:4px;">Teachers are limited to 2 active subjects for specialization.</p>
+                </div>
                 <button class="btn-generate" style="margin-top:20px;" onclick="saveProfile()">💾 Save Profile</button>
                 <p id="profile-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Profile Updated</p>
             </div>

@@ -63,12 +63,12 @@ app.post('/api/auth/register', async (req, res) => {
         const newUser = new User({ name, email, password: hashedPassword, otp });
         await newUser.save();
 
-        await transporter.sendMail({
+        transporter.sendMail({
             from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: 'Verify your Pedagogy Account',
             text: `Your OTP is: ${otp}`
-        });
+        }).catch(err => console.error("Email error:", err));
         res.json({ message: 'OTP sent' });
     } catch (err) { res.status(500).json({ error: 'Registration error: ' + err.message }); }
 });
@@ -112,12 +112,12 @@ app.post('/api/auth/forgot', async (req, res) => {
         user.resetExpiry = Date.now() + 900000; // 15 mins
         await user.save();
 
-        await transporter.sendMail({
+        transporter.sendMail({
             from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: 'Pedagogy Password Reset',
             text: `Your reset code is: ${otp}`
-        });
+        }).catch(err => console.error("Email error:", err));
         res.json({ message: 'Reset code sent' });
     } catch (err) { res.status(500).json({ error: 'Mail error' }); }
 });
@@ -139,7 +139,7 @@ app.post('/api/auth/reset', async (req, res) => {
 // ── AI Suggestions ──
 app.post('/api/suggest', authenticateToken, async (req, res) => {
     const { field, grade, subject, strand, term } = req.body;
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompts = {
         subject: `Suggest a KICD-compliant learning area (subject) for ${grade} in Kenya. Return only the name.`,
         strand: `For ${grade} ${subject} Term ${term} KICD CBC Kenya, suggest 1 appropriate main strand. Return only the name.`,
@@ -147,8 +147,12 @@ app.post('/api/suggest', authenticateToken, async (req, res) => {
         inquiry: `For ${grade} ${subject} Term ${term} KICD CBC Kenya, write 3 Key Inquiry Questions. Return as numbered list.`,
         topic: `For ${grade} ${subject} Term ${term} KICD CBC Kenya, list 5 common topics/sub-strands. Return only names, one per line.`,
         criteria: `For assessing ${grade} ${subject} (topic: ${strand}) in KICD CBC Kenya, list 4 assessment criteria for a rubric. Return only criteria names, one per line.`,
-        anecdotal: `Suggest 3 possible learning behaviors or breakthrough observations to watch for in ${grade} ${subject} while teaching "${strand}".`
+        anecdotal: `Suggest 3 possible learning behaviors or breakthrough observations to watch for in ${grade} ${subject} while teaching "${strand}".`,
+        resources: `Suggest 5 essential learning resources needed for a project on "${strand}" for ${grade} ${subject} in a Kenyan school setting.`
     };
+    if (field === 'strands') {
+        prompts.strands = `For ${grade} ${subject} Term ${term} KICD CBC Kenya, list ALL the main strands (learning areas) for this term. Return as a plain list, one per line. No extra text.`;
+    }
     if (!prompts[field]) return res.status(400).json({ error: 'Unknown field' });
     try {
         const result = await model.generateContent(prompts[field]);
@@ -234,7 +238,7 @@ app.post('/api/share-portfolio', authenticateToken, async (req, res) => {
     if (!parentEmail) return res.status(400).json({ error: 'Parent email required' });
     
     try {
-        await transporter.sendMail({
+        transporter.sendMail({
             from: `"Pedagogy Portfolio" <${process.env.EMAIL_USER}>`,
             to: parentEmail,
             subject: `CBC Progress Update: ${studentName}`,
@@ -250,7 +254,7 @@ app.post('/api/share-portfolio', authenticateToken, async (req, res) => {
             <p style="color:var(--muted); font-size:14px; margin-bottom:30px;">The Heart of Modern CBC</p>erated and shared by the class facilitator via Pedagogy Dashboard.</p>
                 </div>
             `
-        });
+        }).catch(err => console.error("Email error:", err));
         res.json({ message: 'Portfolio shared with parent successfully!' });
     } catch (err) { res.status(500).json({ error: 'Failed to send email: ' + err.message }); }
 });
@@ -319,54 +323,74 @@ app.post('/api/planner', authenticateToken, async (req, res) => {
 
 // ── Generate Document (AI) ──
 app.post('/api/generate', authenticateToken, async (req, res) => {
-    const { documentType, grade, term, subject, strand, extraInstructions, teacherName, schoolName } = req.body;
-    console.log(`[GENERATING] ${documentType} for ${teacherName} at ${schoolName}`);
-    console.log(`Payload:`, req.body);
+    const { documentType, grade, term, subject, strand, extraInstructions, teacherName, schoolName, isTemplate } = req.body;
+    console.log(`[GENERATING] ${documentType} (Template: ${isTemplate}) for ${teacherName} at ${schoolName}`);
     
     try {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
         const adminHeader = `
-            <div style="text-align:center; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:20px;">
-                <h2 style="margin:0; text-transform:uppercase;">${schoolName || '________________'}</h2>
-                <p style="margin:5px 0; font-weight:bold;">REPUBLIC OF KENYA - MINISTRY OF EDUCATION</p>
-                <p style="margin:5px 0;">Competency-Based    <title>Pedagogy | Professional Login</title>
+            <div style="text-align:center; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:20px; color:#000; background:#fff;">
+                <h2 style="margin:0; text-transform:uppercase; font-size:20px;">${schoolName || '________________'}</h2>
+                <p style="margin:5px 0; font-weight:bold; font-size:16px;">REPUBLIC OF KENYA - MINISTRY OF EDUCATION</p>
+                <p style="margin:5px 0; font-style:italic;">Competency-Based Curriculum (CBC)</p>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left; margin-top:15px; border:1px solid #000; padding:10px;">
+                    <div><strong>Facilitator:</strong> ${teacherName}</div>
+                    <div><strong>Learning Area:</strong> ${subject}</div>
+                    <div><strong>Grade:</strong> ${grade}</div>
+                    <div><strong>Term:</strong> ${term}</div>
+                    <div style="grid-column: span 2;"><strong>Strands / Sub-strands:</strong> ${strand || '________________'}</div>
+                </div>
             </div>
         `;
         const sigBlock = `
-            <div style="margin-top:40px; display:flex; justify-content:space-between; border-top:1px dashed #ccc; padding-top:20px;">
+            <div style="margin-top:50px; display:flex; justify-content:space-between; border-top:1px solid #000; padding-top:20px; color:#000;">
                 <div><p>Facilitator's Signature: ________________</p><p>Date: ________________</p></div>
-                <div><p>Headteacher's Stamp: ________________</p><p>Date: ________________</p></div>
+                <div style="text-align:right;"><p>HOD / Headteacher's Stamp: ________________</p><p>Date: ________________</p></div>
             </div>
         `;
 
         let prompt = "";
         let mdResult = "";
 
+        if (isTemplate) {
+            const headers = {
+                sow: ['Week', 'Lesson', 'Strand', 'Sub-strand', 'Specific Learning Outcomes', 'Key Inquiry Questions', 'Core Competencies', 'Learning Resources', 'Assessment Method', 'Remarks'],
+                plan: ['Phase', 'Facilitator Activity', 'Learner Activity', 'Time', 'Resources'],
+                rubric: ['Assessment Criteria', 'Exceeding (EE)', 'Meeting (ME)', 'Approaching (AE)', 'Below (BE)'],
+                checklist: ['Learner Name', 'Learning Outcome', 'Observation', 'Date', 'Remarks']
+            };
+            const currentHeaders = headers[documentType] || ['Header 1', 'Header 2', 'Header 3'];
+            const tableHtml = `
+                <table style="width:100%; border-collapse:collapse; margin-top:20px; border:1px solid #000;">
+                    <thead><tr style="background:#fff;">${currentHeaders.map(h => `<th style="border:1px solid #000; padding:10px; text-align:left;">${h}</th>`).join('')}</tr></thead>
+                    <tbody>${Array(10).fill(0).map(() => `<tr>${currentHeaders.map(() => `<td style="border:1px solid #000; padding:15px; height:30px;"></td>`).join('')}</tr>`).join('')}</tbody>
+                </table>
+            `;
+            return res.json({ html: `${adminHeader}<h3 style="text-align:center; border-bottom:1px solid #000; padding-bottom:10px;">${documentType.toUpperCase()} DOCUMENT</h3>${tableHtml}${sigBlock}`, markdown: 'Template' });
+        }
+
         if (documentType === 'sow') {
-            prompt = `As a KICD CBC expert, generate a professional Scheme of Work for:
-Grade: ${grade} | Subject: ${subject} | Term: ${term} | Strand: ${strand || 'Any'}
-Institutional: ${schoolName} | Facilitator: ${teacherName}
-Extra: ${extraInstructions || 'None'}
+            prompt = `As a KICD CBC expert, generate a professional termly Scheme of Work for:
+Grade: ${grade} | Subject: ${subject} | Term: ${term} | Strands: ${strand}
+School: ${schoolName} | Facilitator: ${teacherName}
 
-Return ONLY a professional HTML table with these columns:
-Return ONLY a professional HTML table with these columns:
-Week, Lesson, Strand, Sub-strand, Specific Learning Outcomes, Key Inquiry Questions, Core Competencies/Values/PCIs, Learning Resources, Assessment Method, Remarks.
-Use professional KICD language and ensure the tone is learner-centered for the Facilitator.`;
+Return ONLY a professional HTML table with columns: Week, Lesson, Strand, Sub-strand, Specific Learning Outcomes, Key Inquiry Questions, Core Competencies/Values/PCIs, Learning Resources, Assessment Method, Remarks.
+Populate for a 12-week term based on the provided strands. Tone: Professional Facilitator.`;
         } else if (documentType === 'plan') {
-            prompt = `Generate a full KICD CBC Lesson Plan for:
-Grade: ${grade} | Subject: ${subject} | Term: ${term} | Strand/Sub-strand: ${strand || 'Any'}
-Extra: ${extraInstructions || 'None'}
+            prompt = `Generate a detailed KICD CBC Lesson Plan for ONE lesson:
+Grade: ${grade} | Subject: ${subject} | Term: ${term} | Strand/Sub-strand: ${strand}
+Facilitator: ${teacherName} | Institution: ${schoolName}
 
-Include these sections in order:
-1. Administrative Details (Grade, Subject, Date, Time)
-2. Specific Learning Outcomes
-3. Core Competencies to be Developed
-4. Values & PCIs to be Integrated
-5. Learning Resources
-6. Lesson Development Table (Stage, Learner Activities, Teacher's Role, Time)
-7. Reflection / Extended Activity
-Follow the official Kenyan format strictly.`;
+Structure in HTML:
+1. Detailed Administrative Box (Grade, Learning Area, Date, Time, Number of Learners)
+2. Specific Learning Outcomes (mapped to Blooms Taxonomy)
+3. Core Competencies & Values integration
+4. Learning Resources
+5. Lesson Development Table (Phases: Introduction, Lesson Development/Core Activities, Conclusion)
+Columns for table: Phase, Facilitator Activity, Learner Activity, Time.
+6. Reflection section for the facilitator.
+Ensure highly specific, learner-centered activities.`;
         } else if (documentType === 'rubric') {
             prompt = `Generate a KICD Assessment Rubric for:
 Grade: ${grade} | Subject: ${subject} | Topic: ${strand || 'Any'}
@@ -384,18 +408,18 @@ Learner Name, Specific Learning Outcome, Observation (Objective description of c
 Include at least 5 rows of blank spaces for learners.
 Add a 'Key to Observation' at the bottom (e.g., L - Learnt, P - Progressing, B - Beginning).`;
         } else if (documentType === 'project') {
-            const { projectTitle, projectOutcomes, projectTime, projectValues } = req.body;
+            const { projectTitle, projectOutcomes, projectTime, projectValues, resources } = req.body;
             prompt = `Create a CBC Project Guide for:
-Title: ${projectTitle} | Grade: ${grade} | Area: ${subject} | Time: ${projectTime}
-Outcomes: ${projectOutcomes} | Values: ${projectValues}
+Title: ${projectTitle} | Grade: ${grade} | Subject: ${subject} | School: ${schoolName}
+Time: ${projectTime} | Outcomes: ${projectOutcomes} | Values: ${projectValues}
+Resources: ${resources || 'Suggested by AI'}
 
 Include:
-1. Introduction & Justification
-2. Resources Needed
-3. Step-by-Step Instructions for Learners
-4. Safety Measures
-5. A blank Assessment Rubric table for the teacher to mark.
-Professional KICD layout.`;
+1. Title & Introduction
+2. Required Resources (KICD-aligned)
+3. Step-by-Step Instructions
+4. Assessment Rubric for the teacher.
+Professional KICD layout. Output in HTML.`;
             const r = await model.generateContent(prompt);
             mdResult = r.response.text().replace(/^```[a-z]*\n?/, '').replace(/```$/, '');
             const projHeader = `${adminHeader}<h3 style="text-align:center;">PROJECT GUIDE: ${projectTitle.toUpperCase()}</h3>`;

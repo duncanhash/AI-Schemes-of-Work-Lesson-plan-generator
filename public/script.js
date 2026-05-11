@@ -44,9 +44,16 @@ async function populateProfileFields() {
         if (pSchool) pSchool.value = profile.school || '';
         if (uEmail) uEmail.textContent = userEmail || 'facilitator@pedagogy.com';
         
-        // Also update the welcome header
+        // Also update the welcome header - Use only first name
         const header = document.getElementById('welcomeHeader');
-        if (header) header.textContent = profile.name ? `Welcome back Facilitator ${profile.name}` : `Welcome Facilitator`;
+        if (header) {
+            const firstName = profile.name ? profile.name.split(' ')[0] : 'Facilitator';
+            header.textContent = `Welcome back, ${firstName}`;
+        }
+        
+        // Populate subjects
+        const pSubjects = document.getElementById('profile-subjects');
+        if (pSubjects) pSubjects.value = profile.subjects || '';
     } catch (e) { console.error("Profile load error:", e); }
 }
 
@@ -121,15 +128,66 @@ function setOutputMode(mode) {
     document.getElementById('sow-template-card').style.display = mode === 'template' ? 'block' : 'none';
 }
 
+// ── Fetch Strands for Range Selection ──
+async function fetchStrands() {
+    const bubble = document.getElementById('bubble-sow-strand');
+    const grade = document.getElementById('gradeSelect-sow').value;
+    const subject = document.getElementById('sow-subject').value;
+    const term = document.getElementById('termSelect-sow').value;
+
+    if (!subject) return alert("Please enter a subject first.");
+
+    bubble.innerHTML = '<div style="text-align:center; padding:10px;">Fetching KICD Strands...</div>';
+    bubble.style.display = 'block';
+
+    try {
+        const res = await fetch('/api/suggest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ field: 'strands', grade, subject, term })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        const strands = data.suggestion.split('\n').filter(s => s.trim());
+        bubble.innerHTML = `
+            <div style="font-size:12px; font-weight:700; margin-bottom:10px;">Select Strands to Include:</div>
+            <div style="max-height:150px; overflow-y:auto; margin-bottom:10px;">
+                ${strands.map((s, i) => `
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                        <input type="checkbox" id="st-${i}" value="${s}" checked>
+                        <label for="st-${i}" style="margin:0; font-size:12px; cursor:pointer;">${s}</label>
+                    </div>
+                `).join('')}
+            </div>
+            <div style="display:flex; gap:10px;">
+                <button class="suggest-action accept" onclick="applyStrandsSelection()">Apply Range</button>
+                <button class="suggest-action reject" onclick="closeBubble('sow-strand')">Cancel</button>
+            </div>
+        `;
+    } catch (e) { bubble.innerHTML = `<div style="color:#ff6b6b; padding:10px;">Error fetching strands.</div>`; }
+}
+
+function applyStrandsSelection() {
+    const checkboxes = document.querySelectorAll('#bubble-sow-strand input:checked');
+    const selected = Array.from(checkboxes).map(c => c.value).join(', ');
+    document.getElementById('sow-strand').value = selected;
+    closeBubble('sow-strand');
+}
+
 // ── AI Suggestions ──
 async function suggestField(inputId, fieldType, context) {
     const bubble = document.getElementById(`bubble-${inputId}`);
-    
     let grade, subject, strand;
+    
     if (context === 'assess') {
         grade = document.getElementById('assess-grade-subject').value;
         subject = document.getElementById('assess-grade-subject').value;
         strand = document.getElementById('assess-topic').value;
+    } else if (context === 'project') {
+        grade = document.getElementById('proj-grade').value;
+        subject = document.getElementById('proj-subject').value;
+        strand = document.getElementById('proj-title').value;
     } else {
         grade = document.getElementById('gradeSelect-sow').value;
         subject = document.getElementById('sow-subject').value;
@@ -140,16 +198,13 @@ async function suggestField(inputId, fieldType, context) {
     bubble.style.display = 'block';
 
     try {
-        const term = context === 'assess' ? '1' : document.getElementById(`termSelect-${context}`).value;
+        const term = (context === 'assess' || context === 'project') ? '1' : document.getElementById(`termSelect-${context}`).value;
         const res = await fetch('/api/suggest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ field: fieldType, grade, subject, strand, term })
         });
-        if (res.status === 401 || res.status === 403) return logout();
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'AI Suggestion failed');
-        
         const suggestionText = data.suggestion || "No suggestion found.";
         const safeSuggestion = suggestionText.replace(/`/g,'\\`').replace(/\n/g, '\\n');
 
@@ -160,17 +215,12 @@ async function suggestField(inputId, fieldType, context) {
                 <button class="suggest-action reject" onclick="closeBubble('${inputId}')">Dismiss</button>
             </div>
         `;
-    } catch (err) { 
-        bubble.innerHTML = `<div style="color:#ff6b6b; padding:10px; font-size:12px;">Error: ${err.message}</div>`;
-    }
+    } catch (err) { bubble.innerHTML = `<div style="color:#ff6b6b; padding:10px;">Suggestion failed.</div>`; }
 }
 
-// ── Suggestions ──
-function applySuggestion(id, val) { document.getElementById(id).value = val; closeBubble(id); }
-function closeBubble(id) { document.getElementById(`bubble-${id}`).style.display = 'none'; }
-
 // ── Generation ──
-async function generateDocument() {
+// ── Generation ──
+async function generateDocument(isTemplate = false) {
     try {
         const type = document.querySelector('input[name="gentype-sow"]:checked').value;
         const payload = {
@@ -181,10 +231,16 @@ async function generateDocument() {
             strand: document.getElementById('sow-strand').value,
             extraInstructions: document.getElementById('extra-sow').value,
             teacherName: document.getElementById('profile-teacher').value || 'Facilitator',
-            schoolName: document.getElementById('profile-school').value || 'Institution'
+            schoolName: document.getElementById('profile-school').value || 'Institution',
+            isTemplate: isTemplate
         };
 
-        showProgress(50, "Generating KICD-aligned AI content...");
+        if (!payload.subject || !payload.strand) return alert("Subject and Strands are required.");
+
+        showProgress(20, "Referring to KICD format...");
+        setTimeout(() => showProgress(50, "Mapping learning outcomes..."), 1000);
+        setTimeout(() => showProgress(80, "Finalizing document structure..."), 2000);
+
         const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -192,9 +248,62 @@ async function generateDocument() {
         });
         if (res.status === 401 || res.status === 403) return logout();
         const data = await res.json();
-        displayOutput(data.html);
-    } catch (err) { alert("Generation Error: " + err.message); }
-    hideProgress();
+        if (!res.ok) throw new Error(data.error || 'Generation failed');
+        
+        showProgress(100, "Done!");
+        setTimeout(() => {
+            displayOutput(data.html);
+            hideProgress();
+        }, 500);
+    } catch (err) { 
+        alert("Generation Error: " + err.message); 
+        hideProgress();
+    }
+}
+
+function downloadTemplate() { generateDocument(true); }
+
+async function generateProject() {
+    try {
+        const payload = {
+            documentType: 'project',
+            grade: document.getElementById('proj-grade').value,
+            subject: document.getElementById('proj-subject').value,
+            projectTitle: document.getElementById('proj-title').value,
+            projectTime: document.getElementById('proj-time').value,
+            projectOutcomes: document.getElementById('proj-outcomes').value,
+            resources: document.getElementById('proj-resources').value,
+            schoolName: document.getElementById('profile-school').value || 'Institution'
+        };
+
+        if (!payload.projectTitle || !payload.projectOutcomes) return alert("Title and Outcomes are required.");
+
+        showProgress(50, "Designing project guide...");
+        const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        showProgress(100, "Done!");
+        setTimeout(() => {
+            displayOutput(data.html);
+            hideProgress();
+        }, 500);
+    } catch (err) { 
+        alert(err.message); 
+        hideProgress();
+    }
+}
+
+function downloadROWTemplate() {
+    const payload = {
+        documentType: 'checklist', // Use checklist as base for ROW
+        isTemplate: true,
+        schoolName: document.getElementById('profile-school').value || 'Institution'
+    };
+    generateDocument(true); // Simplified for now
 }
 
 function displayOutput(html) {
@@ -228,9 +337,17 @@ async function handleAssessmentGeneration() {
         });
         if (res.status === 401 || res.status === 403) return logout();
         const data = await res.json();
-        displayOutput(data.html);
-    } catch (err) { alert(err.message); }
-    hideProgress();
+        if (!res.ok) throw new Error(data.error || 'Assessment generation failed');
+        
+        showProgress(100, "Done!");
+        setTimeout(() => {
+            displayOutput(data.html);
+            hideProgress();
+        }, 500);
+    } catch (err) { 
+        alert(err.message); 
+        hideProgress();
+    }
 }
 
 // ── Community Chat ──
@@ -390,15 +507,20 @@ async function saveProfile() {
     try {
         const name = document.getElementById('profile-teacher').value;
         const school = document.getElementById('profile-school').value;
+        const subjects = document.getElementById('profile-subjects').value;
         
+        // Limit to 2 subjects
+        const subList = subjects.split(',').map(s => s.trim()).filter(s => s);
+        if (subList.length > 2) return alert("Teachers are limited to a maximum of 2 subjects.");
+
         const res = await fetch('/api/profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ name, school })
+            body: JSON.stringify({ name, school, subjects })
         });
 
         if (res.ok) {
-            populateProfileFields(); // Refresh everything
+            populateProfileFields();
             const msg = document.getElementById('profile-msg');
             if (msg) {
                 msg.style.display = 'block';
