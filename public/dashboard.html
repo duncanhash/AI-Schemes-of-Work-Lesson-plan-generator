@@ -168,6 +168,10 @@
                         </div>
                         <div class="suggest-bubble" id="bubble-assess-topic"></div>
                     </div>
+                    <div class="input-group" style="margin-top:14px;">
+                        <label>Extra Instructions for AI</label>
+                        <textarea id="extra-assess" rows="2" placeholder="e.g. Include examples for rural schools..."></textarea>
+                    </div>
                 </div>
             </div>
             <div class="card">
@@ -228,6 +232,10 @@
                         <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('proj-resources','resources','project')">✨ Suggest</button>
                     </div>
                     <div class="suggest-bubble" id="bubble-proj-resources"></div>
+                </div>
+                <div class="input-group" style="margin-top:14px;">
+                    <label>Extra Instructions for AI</label>
+                    <textarea id="extra-proj" rows="2" placeholder="e.g. Focus on digital tools..."></textarea>
                 </div>
                 <button class="btn-generate" style="margin-top:20px;" onclick="generateProject()">⚡ Generate Project Guide</button>
             </div>

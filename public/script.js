@@ -218,6 +218,9 @@ async function suggestField(inputId, fieldType, context) {
     } catch (err) { bubble.innerHTML = `<div style="color:#ff6b6b; padding:10px;">Suggestion failed.</div>`; }
 }
 
+function applySuggestion(id, val) { document.getElementById(id).value = val; closeBubble(id); }
+function closeBubble(id) { document.getElementById(`bubble-${id}`).style.display = 'none'; }
+
 // ── Generation ──
 // ── Generation ──
 async function generateDocument(isTemplate = false) {
@@ -273,6 +276,7 @@ async function generateProject() {
             projectTime: document.getElementById('proj-time').value,
             projectOutcomes: document.getElementById('proj-outcomes').value,
             resources: document.getElementById('proj-resources').value,
+            extraInstructions: document.getElementById('extra-proj').value,
             schoolName: document.getElementById('profile-school').value || 'Institution'
         };
 
@@ -332,6 +336,7 @@ async function handleAssessmentGeneration() {
                 grade: gradeSubject, 
                 subject: gradeSubject, 
                 strand: topic,
+                extraInstructions: document.getElementById('extra-assess').value,
                 schoolName: document.getElementById('profile-school').value || 'Institution'
             })
         });
