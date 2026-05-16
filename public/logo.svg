@@ -1,26 +1,51 @@
 <svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#7c6bff" />
-            <stop offset="100%" stop-color="#00d4aa" />
-        </linearGradient>
-    </defs>
-    <!-- The Open Book Framework -->
-    <path d="M100 160V60M100 160C80 160 40 150 40 130V50C40 70 80 80 100 80M100 160C120 160 160 150 160 130V50C160 70 120 80 100 80" stroke="url(#logoGrad)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-    
-    <!-- Text Lines on Left Page -->
-    <path d="M55 95H85" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
-    <path d="M55 110H85" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
-    <path d="M55 125H85" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
-    
-    <!-- Text Lines on Right Page -->
-    <path d="M115 95H145" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
-    <path d="M115 110H145" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
-    <path d="M115 125H145" stroke="url(#logoGrad)" stroke-width="4" stroke-linecap="round" opacity="0.4"/>
-    
-    <!-- The Digital Spark / Inspiration Star -->
-    <path d="M100 45V25M115 35L100 25L85 35" stroke="#00d4aa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="100" cy="25" r="4" fill="#00d4aa">
-        <animate attributeName="r" values="3;5;3" dur="2s" repeatCount="indefinite" />
-    </circle>
+  <defs>
+    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c6bff" />
+      <stop offset="100%" stop-color="#00d4aa" />
+    </linearGradient>
+    <linearGradient id="pageGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7c6bff" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#00d4aa" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ── Book Spine (center vertical bar) ── -->
+  <rect x="96" y="55" width="8" height="115" rx="3" fill="url(#logoGrad)" opacity="0.95"/>
+
+  <!-- ── Left Page Cover ── -->
+  <path d="M96 60 C78 58 42 64 38 80 L38 160 C42 144 78 140 96 142 Z"
+        fill="url(#pageGrad)" stroke="url(#logoGrad)" stroke-width="3.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ── Right Page Cover ── -->
+  <path d="M104 60 C122 58 158 64 162 80 L162 160 C158 144 122 140 104 142 Z"
+        fill="url(#pageGrad)" stroke="url(#logoGrad)" stroke-width="3.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ── Page stripe lines LEFT (more visible, full opacity) ── -->
+  <line x1="50" y1="90"  x2="91" y2="88"  stroke="#7c6bff" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="50" y1="103" x2="91" y2="101" stroke="#7c6bff" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="50" y1="116" x2="91" y2="114" stroke="#7c6bff" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="50" y1="128" x2="91" y2="126" stroke="#7c6bff" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="50" y1="140" x2="91" y2="138" stroke="#7c6bff" stroke-width="2"   stroke-linecap="round" opacity="0.4"/>
+
+  <!-- ── Page stripe lines RIGHT ── -->
+  <line x1="109" y1="88"  x2="150" y2="90"  stroke="#00d4aa" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="109" y1="101" x2="150" y2="103" stroke="#00d4aa" stroke-width="3.5" stroke-linecap="round"/>
+  <line x1="109" y1="114" x2="150" y2="116" stroke="#00d4aa" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="109" y1="126" x2="150" y2="128" stroke="#00d4aa" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+  <line x1="109" y1="138" x2="150" y2="140" stroke="#00d4aa" stroke-width="2"   stroke-linecap="round" opacity="0.4"/>
+
+  <!-- ── Bottom page edge (book base) ── -->
+  <path d="M38 160 C42 144 78 140 96 142 L104 142 C122 140 158 144 162 160"
+        stroke="url(#logoGrad)" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+
+  <!-- ── Digital Spark / AI star on top ── -->
+  <path d="M100 52 L100 32" stroke="#00d4aa" stroke-width="5" stroke-linecap="round"/>
+  <path d="M87 39 L100 32 L113 39" stroke="#00d4aa" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="100" cy="30" r="5" fill="#00d4aa">
+    <animate attributeName="r" values="4;6;4" dur="2s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="1;0.7;1" dur="2s" repeatCount="indefinite"/>
+  </circle>
 </svg>

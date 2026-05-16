@@ -1,28 +1,131 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Pedagogy | Professional Login</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&family=Syne:wght@800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600&family=Syne:wght@800&display=swap"
+        rel="stylesheet">
     <style>
-        :root { --bg: #050508; --surface: #0d0d14; --accent: #7c6bff; --accent-glow: rgba(124,107,255,0.3); --text: #ffffff; }
-        body { font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--text); display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .auth-card { background: var(--surface); padding: 40px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.05); width: 100%; max-width: 400px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); text-align: center; }
-        .logo-wrap { text-align: center; margin-bottom: 24px; }
-        .logo-wrap img { width: 80px; height: 80px; filter: drop-shadow(0 0 10px var(--accent-glow)); }
-        .logo-text { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; background: linear-gradient(135deg, #7c6bff, #00d4aa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-top: 10px; }
-        h1 { font-family: 'Syne', sans-serif; font-size: 24px; margin-top: 20px; margin-bottom: 8px; }
-        p { color: #8080a0; text-align: center; margin-bottom: 30px; font-size: 14px; }
-        .input-group { margin-bottom: 20px; }
-        label { display: block; font-size: 13px; font-weight: 600; color: #8080a0; margin-bottom: 8px; }
-        input { width: 100%; background: #08080c; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px; color: white; font-family: inherit; }
-        input:focus { outline: none; border-color: var(--accent); }
-        .btn-auth { width: 100%; padding: 16px; background: var(--accent); border: none; border-radius: 14px; color: white; font-weight: 700; cursor: pointer; margin-top: 10px; }
-        .switch-mode { text-align: center; margin-top: 20px; font-size: 14px; color: var(--accent); cursor: pointer; }
-        #otpCard { display: none; }
+        :root {
+            --bg: #050508;
+            --surface: #0d0d14;
+            --accent: #7c6bff;
+            --accent-glow: rgba(124, 107, 255, 0.3);
+            --text: #ffffff;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .auth-card {
+            background: var(--surface);
+            padding: 40px;
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+
+        .logo-wrap {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .logo-wrap img {
+            width: 80px;
+            height: 80px;
+            filter: drop-shadow(0 0 10px var(--accent-glow));
+        }
+
+        .logo-text {
+            font-family: 'Syne', sans-serif;
+            font-size: 28px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #7c6bff, #00d4aa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-top: 10px;
+        }
+
+        h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: 24px;
+            margin-top: 20px;
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: #8080a0;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #8080a0;
+            margin-bottom: 8px;
+        }
+
+        input {
+            width: 100%;
+            background: #08080c;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 14px;
+            color: white;
+            font-family: inherit;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .btn-auth {
+            width: 100%;
+            padding: 16px;
+            background: var(--accent);
+            border: none;
+            border-radius: 14px;
+            color: white;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .switch-mode {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 14px;
+            color: var(--accent);
+            cursor: pointer;
+        }
+
+        #otpCard {
+            display: none;
+        }
     </style>
 </head>
+
 <body>
 
     <div class="auth-card" id="authCard">
@@ -34,29 +137,48 @@
         <p>The Heart of Modern CBC.</p>
 
         <!-- Inline Error Message -->
-        <div id="authError" style="display: none; background: rgba(255, 107, 107, 0.1); color: #ff6b6b; padding: 12px; border-radius: 12px; margin-bottom: 20px; font-size: 14px; border: 1px solid rgba(255, 107, 107, 0.2);"></div>
-        
+        <div id="authError"
+            style="display: none; background: rgba(255, 107, 107, 0.1); color: #ff6b6b; padding: 12px; border-radius: 12px; margin-bottom: 20px; font-size: 14px; border: 1px solid rgba(255, 107, 107, 0.2);">
+        </div>
+
         <!-- Standard FORM tag is essential for browser password saving -->
         <form id="loginForm">
             <div class="input-group" id="nameGroup" style="display: none;">
                 <label>Full Name</label>
                 <input type="text" name="name" id="name" placeholder="Mwalimu Juma" autocomplete="name">
+                <label style="margin-top:14px;">I am a...</label>
+                <div style="display:flex; gap:10px;">
+                    <label id="lblTeacher"
+                        style="flex:1; background:rgba(124,107,255,0.2); padding:10px; border-radius:8px; text-align:center; cursor:pointer; border:1px solid var(--accent); color:white; font-size:14px; font-weight:600;">
+                        <input type="radio" name="role" value="teacher" checked style="display:none;"
+                            onchange="updateRoleStyle(this)"> 👨‍🏫 Teacher
+                    </label>
+                    <label id="lblParent"
+                        style="flex:1; background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; text-align:center; cursor:pointer; border:1px solid rgba(255,255,255,0.1); color:#8080a0; font-size:14px; font-weight:600;">
+                        <input type="radio" name="role" value="parent" style="display:none;"
+                            onchange="updateRoleStyle(this)"> 👪 Parent
+                    </label>
+                </div>
             </div>
             <div class="input-group">
                 <label>Email Address</label>
-                <input type="email" name="email" id="email" placeholder="mwalimu@school.com" required autocomplete="username">
+                <input type="email" name="email" id="email" placeholder="mwalimu@school.com" required
+                    autocomplete="username">
             </div>
             <div class="input-group">
                 <label>Password</label>
                 <div style="position: relative; width: 100%;">
-                    <input type="password" name="password" id="password" placeholder="••••••••" required autocomplete="current-password" 
+                    <input type="password" name="password" id="password" placeholder="••••••••" required
+                        autocomplete="current-password"
                         style="width: 100%; box-sizing: border-box; padding-right: 45px;">
-                    <span id="togglePassword" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #8080a0; font-size: 18px; user-select: none;">👁️</span>
+                    <span id="togglePassword"
+                        style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #8080a0; font-size: 18px; user-select: none;">👁️</span>
                 </div>
             </div>
             <button type="submit" class="btn-auth" id="submitBtn">Log In</button>
             <div class="switch-mode" id="switchBtn" onclick="switchMode()">Don't have an account? Sign Up</div>
-            <div style="text-align: center; margin-top: 15px; font-size: 13px; color: #8080a0; cursor: pointer;" onclick="forgotPassword()">Forgot Password?</div>
+            <div style="text-align: center; margin-top: 15px; font-size: 13px; color: #8080a0; cursor: pointer;"
+                onclick="forgotPassword()">Forgot Password?</div>
         </form>
     </div>
 
@@ -69,11 +191,37 @@
         <p>Enter the 6-digit code sent to your email.</p>
         <div class="input-group">
             <label>OTP Code</label>
-            <input type="text" id="otpInput" placeholder="123456" maxlength="6" style="text-align: center; font-size: 24px; letter-spacing: 5px;">
+            <input type="text" id="otpInput" placeholder="123456" maxlength="6"
+                style="text-align: center; font-size: 24px; letter-spacing: 5px;">
         </div>
         <button class="btn-auth" onclick="verifyOTP()">Verify &amp; Launch</button>
     </div>
 
+    <script>
+        function updateRoleStyle(radio) {
+            const teacher = document.getElementById('lblTeacher');
+            const parent = document.getElementById('lblParent');
+            const nameInput = document.getElementById('name');
+            const emailInput = document.getElementById('email');
+            
+            [teacher, parent].forEach(el => {
+                el.style.background = 'rgba(255,255,255,0.05)'; 
+                el.style.borderColor = 'rgba(255,255,255,0.1)'; 
+                el.style.color = '#8080a0';
+            });
+            
+            if (radio.value === 'teacher') {
+                teacher.style.background = 'rgba(124,107,255,0.2)'; teacher.style.borderColor = 'var(--accent)'; teacher.style.color = 'white';
+                if (nameInput) nameInput.placeholder = "Mwalimu Juma";
+                if (emailInput) emailInput.placeholder = "mwalimu@school.com";
+            } else if (radio.value === 'parent') {
+                parent.style.background = 'rgba(0,212,170,0.2)'; parent.style.borderColor = '#00d4aa'; parent.style.color = 'white';
+                if (nameInput) nameInput.placeholder = "Mama/Baba Juma";
+                if (emailInput) emailInput.placeholder = "parent@email.com";
+            }
+        }
+    </script>
     <script src="login.js"></script>
 </body>
+
 </html>

@@ -1,1 +1,10 @@
-﻿.env
+.env
+node_modules/
+local_db.json
+users.json
+scratch/
+.gemini/
+*.log
+.DS_Store
+dist/
+build/

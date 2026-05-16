@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Parent Portal | Pedagogy</title>
+    <link href="/style.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Syne:wght@800&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --accent: #00d4aa; /* Green for Parents */
+            --accent-glow: rgba(0, 212, 170, 0.3);
+        }
+        .sidebar {
+            background: rgba(10, 20, 18, 0.85); /* Slightly greener sidebar */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dashboard-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">PEDAGOGY</div>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" onclick="showSection('records')">
+                    <span>📈</span> Tracking Records
+                </button>
+                <button class="nav-btn" onclick="showSection('chat')">
+                    <span>💬</span> Parent Hub
+                </button>
+                <div class="divider"></div>
+                <button class="nav-btn logout-btn" onclick="logout()">
+                    <span>🚪</span> Log Out
+                </button>
+            </nav>
+            <div class="user-profile-brief" style="margin-top:20px; padding:15px; background:rgba(255,255,255,0.03); border-radius:12px;">
+                <p id="parent-name" style="font-weight:700; font-size:14px; margin-bottom:4px;">Parent Name</p>
+                <p id="parent-email" style="font-size:12px; color:var(--muted);">parent@email.com</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Tracking Records Section -->
+            <section id="view-records" class="view-section active">
+                <div class="hero">
+                    <span class="hero-badge">LEARNER PROGRESS</span>
+                    <h1>Tracking <span>Records.</span></h1>
+                    <p>View your child's CBC projects, assessments, and creative milestones.</p>
+                </div>
+
+                <div id="records-container" class="portfolio-grid">
+                    <!-- Shared records will be injected here -->
+                    <div class="card" style="grid-column: 1/-1; text-align: center; padding: 60px;">
+                        <p style="color:var(--muted);">No shared records found yet. Records appear here when a teacher shares them with your email.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Parent Hub (Chat) Section -->
+            <section id="view-chat" class="view-section">
+                <div class="hero">
+                    <span class="hero-badge">COMMUNITY</span>
+                    <h1>Parent <span>Hub.</span></h1>
+                    <p>Connect with other parents and stay updated on school activities.</p>
+                </div>
+
+                <div class="chat-app-container card" style="height: 600px; padding: 0; overflow: hidden;">
+                    <div class="chat-main">
+                        <div class="chat-main-header">
+                            <div class="channel-avatar" style="background: var(--accent2);">👪</div>
+                            <div style="margin-left:12px;">
+                                <h3 style="margin:0;">Parent Community</h3>
+                                <p style="margin:0; font-size:12px; color:var(--accent2);">Live discussion</p>
+                            </div>
+                        </div>
+                        <div id="chat-messages" class="chat-messages premium-bg">
+                            <!-- Messages -->
+                        </div>
+                        <div class="chat-input-row premium-input">
+                            <input type="text" id="chatInput" placeholder="Type a message to the community...">
+                            <button class="chat-send-btn" onclick="sendMessage()">
+                                <span style="font-size:20px;">➔</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Details Modal -->
+    <div id="recordModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:2000; align-items:center; justify-content:center; padding:20px;">
+        <div class="card" style="width:100%; max-width:800px; max-height:90vh; overflow-y:auto; position:relative;">
+            <button onclick="closeModal()" style="position:absolute; right:20px; top:20px; background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+            <div id="modal-content"></div>
+        </div>
+    </div>
+
+    <script src="parent_dashboard.js"></script>
+</body>
+
+</html>

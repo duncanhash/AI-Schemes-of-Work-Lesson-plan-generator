@@ -7,14 +7,31 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const htmlToDocx = require('html-to-docx');
+const multer = require('multer');
+const pdfParse = require('pdf-parse');
 require('dotenv').config();
 const { User, ChatMessage, Portfolio, WeeklyPlan, connectDB } = require('./db');
+
+const upload = multer({ dest: 'uploads/' });
 
 connectDB();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_cbc_key';
+const JWT_SECRET = process.env.JWT_SECRET || 'cbc_prod_secure_928173645';
+
+// ── Rate Limiting ──
+const loginAttempts = new Map();
+function rateLimit(req, res, next) {
+    const ip = req.ip;
+    const now = Date.now();
+    const attempts = loginAttempts.get(ip) || [];
+    const recentAttempts = attempts.filter(time => now - time < 60000);
+    if (recentAttempts.length >= 5) return res.status(429).json({ error: 'Too many attempts. Try again in a minute.' });
+    recentAttempts.push(now);
+    loginAttempts.set(ip, recentAttempts);
+    next();
+}
 
 // ── ROOT ROUTE (HOMEPAGE FIRST) ──
 app.get('/', (req, res) => {
@@ -50,17 +67,18 @@ function authenticateToken(req, res, next) {
 }
 
 // ── Auth Endpoints ──
-app.post('/api/auth/register', async (req, res) => {
-    const { name, email, password } = req.body;
+app.post('/api/auth/register', rateLimit, async (req, res) => {
+    let { name, email, password, role } = req.body;
+    email = email.toLowerCase();
     try {
         const existingUser = await User.findOne({ email });
         if (existingUser) return res.status(400).json({ error: 'User exists' });
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log(`[TESTING] OTP for ${email}: ${otp}`);
+        console.log(`[AUTH] New Registration Attempt: ${email} (OTP: ${otp})`);
         
-        const newUser = new User({ name, email, password: hashedPassword, otp });
+        const newUser = new User({ name, email, password: hashedPassword, otp, role: role || 'teacher' });
         await newUser.save();
 
         transporter.sendMail({
@@ -69,12 +87,14 @@ app.post('/api/auth/register', async (req, res) => {
             subject: 'Verify your Pedagogy Account',
             text: `Your OTP is: ${otp}`
         }).catch(err => console.error("Email error:", err));
-        res.json({ message: 'OTP sent' });
+        
+        res.json({ message: 'OTP sent', debugOtp: otp });
     } catch (err) { res.status(500).json({ error: 'Registration error: ' + err.message }); }
 });
 
 app.post('/api/auth/verify', async (req, res) => {
-    const { email, otp } = req.body;
+    let { email, otp } = req.body;
+    email = email.toLowerCase();
     try {
         const user = await User.findOne({ email, otp });
         if (!user) return res.status(400).json({ error: 'Invalid OTP' });
@@ -83,20 +103,41 @@ app.post('/api/auth/verify', async (req, res) => {
         user.otp = null;
         await user.save();
 
-        const token = jwt.sign({ email }, JWT_SECRET);
-        res.json({ token, email, name: user.name });
+        const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
+        res.json({ token, email, name: user.name, role: user.role || 'teacher' });
     } catch (err) { res.status(500).json({ error: 'Verification error' }); }
 });
 
-app.post('/api/auth/login', async (req, res) => {
-    const { email, password } = req.body;
+app.post('/api/auth/login', rateLimit, async (req, res) => {
+    let { email, password } = req.body;
+    email = email.toLowerCase();
     try {
         const user = await User.findOne({ email });
-        if (!user || !(await bcrypt.compare(password, user.password))) return res.status(400).json({ error: 'Invalid credentials' });
-        if (!user.isVerified) return res.status(400).json({ error: 'Please verify email', needsVerify: true });
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            console.warn(`[AUTH] Failed login attempt for: ${email}`);
+            return res.status(400).json({ error: 'Invalid credentials' });
+        }
+        if (!user.isVerified) {
+            const otp = Math.floor(100000 + Math.random() * 900000).toString();
+            user.otp = otp;
+            await user.save();
+            
+            transporter.sendMail({
+                from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
+                to: email,
+                subject: 'Verify your Pedagogy Account',
+                text: `Your new OTP is: ${otp}`
+            }).catch(err => console.error("Email error:", err));
 
-        const token = jwt.sign({ email }, JWT_SECRET);
-        res.json({ token, email, name: user.name });
+            return res.status(400).json({ 
+                error: 'Please verify email', 
+                needsVerify: true, 
+                debugOtp: otp 
+            });
+        }
+
+        const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
+        res.json({ token, email, name: user.name, role: user.role || 'teacher' });
     } catch (err) { res.status(500).json({ error: 'Login error' }); }
 });
 
@@ -118,7 +159,8 @@ app.post('/api/auth/forgot', async (req, res) => {
             subject: 'Pedagogy Password Reset',
             text: `Your reset code is: ${otp}`
         }).catch(err => console.error("Email error:", err));
-        res.json({ message: 'Reset code sent' });
+        
+        res.json({ message: 'Reset code sent', debugOtp: otp });
     } catch (err) { res.status(500).json({ error: 'Mail error' }); }
 });
 
@@ -138,38 +180,92 @@ app.post('/api/auth/reset', async (req, res) => {
 
 // ── AI Suggestions ──
 app.post('/api/suggest', authenticateToken, async (req, res) => {
-    const { field, grade, subject, strand, term } = req.body;
+    let { field, grade, subject, strand, term, extraInstructions } = req.body;
+    const email = req.user.email.toLowerCase();
+    
+    const user = await User.findOne({ email });
+    const curriculumContext = user && user.curriculumText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Use strictly):\n${user.curriculumText}` : '';
+    
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompts = {
-        subject: `Suggest a KICD-compliant learning area (subject) for ${grade} in Kenya. Return only the name.`,
-        strand: `For ${grade} ${subject} Term ${term} KICD CBC Kenya, suggest 1 appropriate main strand. Return only the name.`,
-        outcomes: `For ${grade} ${subject} Term ${term} KICD CBC Kenya, write 4 Specific Learning Outcomes starting with action verbs. Return as numbered list.`,
-        inquiry: `For ${grade} ${subject} Term ${term} KICD CBC Kenya, write 3 Key Inquiry Questions. Return as numbered list.`,
-        topic: `For ${grade} ${subject} Term ${term} KICD CBC Kenya, list 5 common topics/sub-strands. Return only names, one per line.`,
-        criteria: `For assessing ${grade} ${subject} (topic: ${strand}) in KICD CBC Kenya, list 4 assessment criteria for a rubric. Return only criteria names, one per line.`,
-        anecdotal: `Suggest 3 possible learning behaviors or breakthrough observations to watch for in ${grade} ${subject} while teaching "${strand}".`,
-        resources: `Suggest 5 essential learning resources needed for a project on "${strand}" for ${grade} ${subject} in a Kenyan school setting.`
+        subject: `Suggest a KICD-compliant learning area (subject) for ${grade} in Kenya strictly aligned with the KICD syllabus. Return only the name.`,
+        strand: `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, suggest 1 appropriate main strand. Return only the name.`,
+        outcomes: `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, write 4 Specific Learning Outcomes starting with action verbs. Return as numbered list.`,
+        inquiry: `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, write 3 Key Inquiry Questions. Return as numbered list.`,
+        topic: `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, list 5 common topics/sub-strands. Return only names, one per line.`,
+        criteria: `For assessing ${grade} ${subject} (topic: ${strand}) strictly according to KICD CBC standards in Kenya, list 4 assessment criteria for a rubric. Return only criteria names, one per line.`,
+        anecdotal: `Suggest 3 possible learning behaviors or breakthrough observations to watch for in ${grade} ${subject} while teaching "${strand}" based on KICD CBC.`,
+        resources: `Suggest 5 essential learning resources needed for a project on "${strand}" for ${grade} ${subject} in a Kenyan school setting based on KICD CBC.`
     };
     if (field === 'strands') {
-        prompts.strands = `For ${grade} ${subject} Term ${term} KICD CBC Kenya, list ALL the main strands (learning areas) for this term. Return as a plain list, one per line. No extra text.`;
+        prompts.strands = `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, list ALL the main strands (learning areas) for this term. Return as a plain list, one per line. No extra text.`;
     }
     if (!prompts[field]) return res.status(400).json({ error: 'Unknown field' });
+    
+    let finalPrompt = prompts[field];
+    if (extraInstructions) {
+        finalPrompt += `\n\nExtra Instructions: ${extraInstructions}`;
+    }
+    finalPrompt += curriculumContext;
+
     try {
-        const result = await model.generateContent(prompts[field]);
+        const result = await model.generateContent(finalPrompt);
         res.json({ suggestion: result.response.text().trim() });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+    } catch (err) { 
+        console.error("Suggest error:", err.message);
+        res.status(500).json({ error: err.message }); 
+    }
 });
 
 // ── DOCX Export ──
 app.post('/api/docx', authenticateToken, async (req, res) => {
     try {
         const { html } = req.body;
-        const buffer = await htmlToDocx(html, null, {
+        let cleanHtml = html || '';
+        
+        // 1. Remove markdown fences if any slipped through
+        cleanHtml = cleanHtml.replace(/```[a-zA-Z]*\n?/g, '');
+        
+        // 2. Remove script, style, comments, and xml instructions
+        cleanHtml = cleanHtml.replace(/<(style|script|xml|meta|link)[^>]*>[\s\S]*?<\/\1>/gi, '');
+        cleanHtml = cleanHtml.replace(/<!--[\s\S]*?-->/g, '');
+        cleanHtml = cleanHtml.replace(/<\?[\s\S]*?\?>/g, '');
+        cleanHtml = cleanHtml.replace(/<![\s\S]*?>/g, '');
+        
+        // 3. Flatten namespaces in tags (e.g., <w:sdt> -> <sdt>)
+        cleanHtml = cleanHtml.replace(/<\/?[a-zA-Z0-9-]+:([a-zA-Z0-9-]+)/g, (m, p1) => m.startsWith('</') ? `</${p1}` : `<${p1}`);
+        
+        // 4. ULTIMATE ATTRIBUTE SANITIZER: Strip ALL attributes EXCEPT style, colspan, rowspan, width
+        cleanHtml = cleanHtml.replace(/<([a-zA-Z0-9]+)([^>]*)>/g, (match, tag, attrs) => {
+            let keep = '';
+            let mStyle = attrs.match(/style=["']([^"']*)["']/i);
+            if (mStyle) {
+                // BUGFIX: html-to-docx v1.8.0 crashes with 'Invalid XML name: @w' when encountering width percentages in inline styles on certain elements (like td).
+                let safeStyle = mStyle[1].replace(/width\s*:\s*\d+%\s*;?/gi, '');
+                keep += ` style="${safeStyle}"`;
+            }
+            
+            let mCol = attrs.match(/colspan=["']([^"']*)["']/i);
+            if (mCol) keep += ` colspan="${mCol[1]}"`;
+
+            let mRow = attrs.match(/rowspan=["']([^"']*)["']/i);
+            if (mRow) keep += ` rowspan="${mRow[1]}"`;
+            
+            let mWidth = attrs.match(/width=["']([^"']*)["']/i);
+            if (mWidth) keep += ` width="${mWidth[1]}"`;
+
+            return `<${tag}${keep}>`;
+        });
+        
+        const buffer = await htmlToDocx(cleanHtml, null, {
             margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
         });
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.send(buffer);
-    } catch (err) { res.status(500).json({ error: 'DOCX failed: ' + err.message }); }
+    } catch (err) { 
+        console.error("DOCX Error:", err);
+        res.status(500).json({ error: 'DOCX failed: ' + err.message }); 
+    }
 });
 
 // ── Profile Endpoints ──
@@ -186,6 +282,31 @@ app.post('/api/profile', authenticateToken, async (req, res) => {
         await User.findOneAndUpdate({ email: req.user.email }, { profileTeacher: name, profileSchool: school });
         res.json({ message: 'Profile updated' });
     } catch (err) { res.status(500).json({ error: 'Profile save error' }); }
+});
+
+app.post('/api/profile/curriculum', authenticateToken, upload.single('curriculum'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+        
+        let text = '';
+        if (req.file.mimetype === 'application/pdf') {
+            const dataBuffer = fs.readFileSync(req.file.path);
+            const data = await pdfParse(dataBuffer);
+            text = data.text;
+        } else {
+            text = fs.readFileSync(req.file.path, 'utf8');
+        }
+        
+        fs.unlinkSync(req.file.path);
+        
+        const curriculumText = text.substring(0, 3000);
+        await User.findOneAndUpdate({ email: req.user.email }, { curriculumText });
+        
+        res.json({ message: 'Curriculum processed and saved' });
+    } catch (err) {
+        console.error("Curriculum upload error:", err);
+        res.status(500).json({ error: 'Upload failed: ' + err.message });
+    }
 });
 
 // ── Storage Management Endpoints ──
@@ -234,10 +355,15 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 
 // ── Parent Integration: Share Portfolio ──
 app.post('/api/share-portfolio', authenticateToken, async (req, res) => {
-    const { parentEmail, studentName, projectTitle, portfolioHtml } = req.body;
+    const { parentEmail, studentName, projectTitle, portfolioHtml, recordId } = req.body;
     if (!parentEmail) return res.status(400).json({ error: 'Parent email required' });
     
     try {
+        // If we have a recordId, update the portfolio in DB to include the parentEmail
+        if (recordId) {
+            await Portfolio.findOneAndUpdate({ _id: recordId }, { sharedWith: parentEmail.toLowerCase() });
+        }
+
         transporter.sendMail({
             from: `"Pedagogy Portfolio" <${process.env.EMAIL_USER}>`,
             to: parentEmail,
@@ -246,17 +372,55 @@ app.post('/api/share-portfolio', authenticateToken, async (req, res) => {
                 <div style="font-family:sans-serif; max-width:600px; margin:auto; border:1px solid #eee; padding:30px; border-radius:12px;">
                     <h2 style="color:#7c6bff;">Pedagogy Learner Update</h2>
                     <p>Hello, here is a project update for <strong>${studentName}</strong> regarding the project: <strong>"${projectTitle}"</strong>.</p>
+                    <p>You can also view this and other records in your <a href="${process.env.APP_URL || 'http://localhost:3000'}/login.html">Parent Portal</a>.</p>
                     <hr style="border:none; border-top:1px solid #eee; margin:20px 0;"/>
                     <div style="background:#f9f9ff; padding:20px; border-radius:8px;">
                         ${portfolioHtml}
                     </div>
-                    <h2 class="logo">PEDAGOGY</h2>
-            <p style="color:var(--muted); font-size:14px; margin-bottom:30px;">The Heart of Modern CBC</p>erated and shared by the class facilitator via Pedagogy Dashboard.</p>
+                    <h2 style="font-family:sans-serif; color:#7c6bff; margin-top:30px;">PEDAGOGY</h2>
+                    <p style="color:#8080a0; font-size:14px;">The Heart of Modern CBC</p>
                 </div>
             `
         }).catch(err => console.error("Email error:", err));
         res.json({ message: 'Portfolio shared with parent successfully!' });
-    } catch (err) { res.status(500).json({ error: 'Failed to send email: ' + err.message }); }
+    } catch (err) { res.status(500).json({ error: 'Failed to share: ' + err.message }); }
+});
+
+// ── Parent Dashboard Endpoints ──
+app.get('/api/parent/records', authenticateToken, async (req, res) => {
+    try {
+        if (req.user.role !== 'parent') return res.status(403).json({ error: 'Access denied' });
+        // Fetch both portfolios and generic records shared with this parent
+        const portfolios = await Portfolio.find({ sharedWith: req.user.email.toLowerCase() });
+        res.json(portfolios);
+    } catch (err) { res.status(500).json({ error: 'Failed to load records' }); }
+});
+
+// Generic endpoint to push any observation/assessment to a parent
+app.post('/api/parent/push-record', authenticateToken, async (req, res) => {
+    const { parentEmail, studentName, title, content, type } = req.body;
+    try {
+        const newRecord = new Portfolio({
+            userEmail: req.user.email,
+            sharedWith: parentEmail.toLowerCase(),
+            studentName,
+            projectTitle: title,
+            description: content,
+            type: type || 'observation',
+            timestamp: Date.now()
+        });
+        await newRecord.save();
+        
+        // Optional: Send email notification too
+        transporter.sendMail({
+            from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
+            to: parentEmail,
+            subject: `New CBC Record for ${studentName}: ${title}`,
+            html: `<h3>New Record Shared</h3><p>Your child's facilitator has shared a new record: <strong>${title}</strong></p><p>View it now in your <a href="${process.env.APP_URL || 'http://localhost:3000'}/login.html">Parent Portal</a>.</p>`
+        }).catch(e => console.error("Email failed:", e));
+
+        res.json({ message: 'Record pushed to parent dashboard!' });
+    } catch (err) { res.status(500).json({ error: 'Push failed' }); }
 });
 
 
@@ -323,162 +487,234 @@ app.post('/api/planner', authenticateToken, async (req, res) => {
 
 // ── Generate Document (AI) ──
 app.post('/api/generate', authenticateToken, async (req, res) => {
-    const { documentType, grade, term, subject, strand, extraInstructions, teacherName, schoolName, isTemplate } = req.body;
+    const { documentType, grade, term, subject, strand, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources } = req.body;
     console.log(`[GENERATING] ${documentType} (Template: ${isTemplate}) for ${teacherName} at ${schoolName}`);
-    
     try {
+        const user = await User.findOne({ email: req.user.email });
+        const curriculumContext = user && user.curriculumText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Strictly apply this to your generated content):\n${user.curriculumText}` : '';
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const TS = `width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;`;
+        const TD = `border:1px solid #000;padding:8px;vertical-align:top;`;
+        const TH = `border:1px solid #000;padding:9px;background:#f0f0f0;text-align:left;font-weight:bold;font-size:12px;`;
+        const H4 = `font-size:14px;margin:20px 0 8px;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:4px;`;
 
-        const adminHeader = `
-            <div style="text-align:center; border-bottom:2px solid #000; padding-bottom:10px; margin-bottom:20px; color:#000; background:#fff;">
-                <h2 style="margin:0; text-transform:uppercase; font-size:20px;">${schoolName || '________________'}</h2>
-                <p style="margin:5px 0; font-weight:bold; font-size:16px;">REPUBLIC OF KENYA - MINISTRY OF EDUCATION</p>
-                <p style="margin:5px 0; font-style:italic;">Competency-Based Curriculum (CBC)</p>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left; margin-top:15px; border:1px solid #000; padding:10px;">
-                    <div><strong>Facilitator:</strong> ${teacherName}</div>
-                    <div><strong>Learning Area:</strong> ${subject}</div>
-                    <div><strong>Grade:</strong> ${grade}</div>
-                    <div><strong>Term:</strong> ${term}</div>
-                    <div style="grid-column: span 2;"><strong>Strands / Sub-strands:</strong> ${strand || '________________'}</div>
-                </div>
-            </div>
-        `;
-        const sigBlock = `
-            <div style="margin-top:50px; display:flex; justify-content:space-between; border-top:1px solid #000; padding-top:20px; color:#000;">
-                <div><p>Facilitator's Signature: ________________</p><p>Date: ________________</p></div>
-                <div style="text-align:right;"><p>HOD / Headteacher's Stamp: ________________</p><p>Date: ________________</p></div>
-            </div>
-        `;
+        const adminHeader = `<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px;font-family:Arial,sans-serif;">
+<p style="margin:4px 0;font-style:italic;font-size:13px;">Competency-Based Curriculum (CBC)</p>
+<table style="${TS}margin-top:12px;"><tbody>
+<tr><td style="${TD}" width="25%"><strong>Facilitator:</strong> ${teacherName || '________________'}</td><td style="${TD}" width="25%"><strong>Learning Area:</strong> ${subject || '________________'}</td><td style="${TD}" width="25%"><strong>Grade:</strong> ${grade || '________________'}</td><td style="${TD}" width="25%"><strong>Term:</strong> ${term || '________________'}</td></tr>
+<tr><td colspan="4" style="${TD}"><strong>Strand/Sub-strand:</strong> ${strand || '________________'}</td></tr>
+</tbody></table></div>`;
 
-        let prompt = "";
-        let mdResult = "";
+        const sigBlock = `<div style="margin-top:40px;border-top:1px solid #000;padding-top:16px;display:flex;justify-content:space-between;font-size:13px;">
+<div><p>Facilitator's Signature: ___________________</p><p>Date: ___________________</p></div>
+<div style="text-align:right;"><p>HOD / Headteacher's Stamp: ___________________</p><p>Date: ___________________</p></div>
+</div>`;
 
+        const NO_MD = `\nIMPORTANT: Output ONLY valid HTML. Do NOT use markdown formatting like ** or ||. Do NOT wrap output in \`\`\`html. Start directly with the first HTML element.`;
+
+        // ── BLANK TEMPLATE ──
         if (isTemplate) {
-            const headers = {
-                sow: ['Week', 'Lesson', 'Strand', 'Sub-strand', 'Specific Learning Outcomes', 'Key Inquiry Questions', 'Core Competencies', 'Learning Resources', 'Assessment Method', 'Remarks'],
-                plan: ['Phase', 'Facilitator Activity', 'Learner Activity', 'Time', 'Resources'],
-                rubric: ['Assessment Criteria', 'Exceeding (EE)', 'Meeting (ME)', 'Approaching (AE)', 'Below (BE)'],
-                checklist: ['Learner Name', 'Learning Outcome', 'Observation', 'Date', 'Remarks']
+            const hdrs = {
+                sow:  ['Week','Lesson','Strand','Sub-strand','Specific Learning Outcomes','Key Inquiry Questions','Core Competencies','Learning Resources','Assessment Method','Remarks'],
+                plan: ['Phase','Facilitator Activity','Learner Activity','Time (mins)','Resources'],
+                rubric: ['Assessment Criteria','Exceeding (EE)','Meeting (ME)','Approaching (AE)','Below (BE)'],
+                checklist: ['No.','Learner Name','Learning Outcome','Observation','L','P','B','Date','Remarks']
             };
-            const currentHeaders = headers[documentType] || ['Header 1', 'Header 2', 'Header 3'];
-            const tableHtml = `
-                <table style="width:100%; border-collapse:collapse; margin-top:20px; border:1px solid #000;">
-                    <thead><tr style="background:#fff;">${currentHeaders.map(h => `<th style="border:1px solid #000; padding:10px; text-align:left;">${h}</th>`).join('')}</tr></thead>
-                    <tbody>${Array(10).fill(0).map(() => `<tr>${currentHeaders.map(() => `<td style="border:1px solid #000; padding:15px; height:30px;"></td>`).join('')}</tr>`).join('')}</tbody>
-                </table>
-            `;
-            return res.json({ html: `${adminHeader}<h3 style="text-align:center; border-bottom:1px solid #000; padding-bottom:10px;">${documentType.toUpperCase()} DOCUMENT</h3>${tableHtml}${sigBlock}`, markdown: 'Template' });
+            const cols = hdrs[documentType] || ['Column 1','Column 2','Column 3'];
+            const rows = Array(12).fill(0).map(()=>`<tr>${cols.map(()=>`<td style="${TD}height:32px;"></td>`).join('')}</tr>`).join('');
+            const tbl = `<table style="${TS}"><thead><tr>${cols.map(c=>`<th style="${TH}">${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+            return res.json({ html: `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;">${documentType.toUpperCase()} — BLANK TEMPLATE</h3>${tbl}${sigBlock}`, markdown: 'Template' });
         }
 
+        let html = '';
+
+        // ── SCHEME OF WORK ──
         if (documentType === 'sow') {
-            prompt = `As a KICD CBC expert, generate a professional termly Scheme of Work for:
-Grade: ${grade} | Subject: ${subject} | Term: ${term} | Strands: ${strand}
-School: ${schoolName} | Facilitator: ${teacherName}
+            const prompt = `You are a strict KICD CBC specialist for Kenya. Generate a complete 12-week Scheme of Work (SOW) strictly aligned with the KICD curriculum for:
+Grade: ${grade} | Learning Area: ${subject} | Term: ${term} | Strands: ${strand}
+Facilitator: ${teacherName}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
 
-Return ONLY a professional HTML table with columns: Week, Lesson, Strand, Sub-strand, Specific Learning Outcomes, Key Inquiry Questions, Core Competencies/Values/PCIs, Learning Resources, Assessment Method, Remarks.
-Populate for a 12-week term based on the provided strands. Tone: Professional Facilitator.`;
-        } else if (documentType === 'plan') {
-            prompt = `Generate a detailed KICD CBC Lesson Plan for ONE lesson:
-Grade: ${grade} | Subject: ${subject} | Term: ${term} | Strand/Sub-strand: ${strand}
-Facilitator: ${teacherName} | Institution: ${schoolName}
+Output ONE HTML <table> with these 10 columns:
+Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Questions | Core Competencies, Values & PCIs | Learning Resources | Assessment Method | Remarks
 
-Structure in HTML:
-1. Detailed Administrative Box (Grade, Learning Area, Date, Time, Number of Learners)
-2. Specific Learning Outcomes (mapped to Blooms Taxonomy)
-3. Core Competencies & Values integration
-4. Learning Resources
-5. Lesson Development Table (Phases: Introduction, Lesson Development/Core Activities, Conclusion)
-Columns for table: Phase, Facilitator Activity, Learner Activity, Time.
-6. Reflection section for the facilitator.
-Ensure highly specific, learner-centered activities.`;
-        } else if (documentType === 'rubric') {
-            prompt = `Generate a KICD Assessment Rubric for:
-Grade: ${grade} | Subject: ${subject} | Topic: ${strand || 'Any'}
-
-Return ONLY an HTML table with 4 columns:
-Assessment Criteria | Exceeding Expectation (EE) | Meeting Expectation (ME) | Approaching Expectation (AE) | Below Expectation (BE)
-Provide detailed, competency-based descriptors in each cell.
-Add a legend below explaining the EE/ME/AE/BE ratings.`;
-        } else if (documentType === 'checklist') {
-            prompt = `Generate a KICD CBC Observation Checklist for:
-Grade: ${grade} | Subject: ${subject} | Topic: ${strand || 'Any'}
-
-Return ONLY a professional HTML table with columns:
-Learner Name, Specific Learning Outcome, Observation (Objective description of competency), Date, Remarks.
-Include at least 5 rows of blank spaces for learners.
-Add a 'Key to Observation' at the bottom (e.g., L - Learnt, P - Progressing, B - Beginning).`;
-        } else if (documentType === 'project') {
-            const { projectTitle, projectOutcomes, projectTime, projectValues, resources } = req.body;
-            prompt = `Create a CBC Project Guide for:
-Title: ${projectTitle} | Grade: ${grade} | Subject: ${subject} | School: ${schoolName}
-Time: ${projectTime} | Outcomes: ${projectOutcomes} | Values: ${projectValues}
-Resources: ${resources || 'Suggested by AI'}
-
-Include:
-1. Title & Introduction
-2. Required Resources (KICD-aligned)
-3. Step-by-Step Instructions
-4. Assessment Rubric for the teacher.
-Professional KICD layout. Output in HTML.`;
+Requirements:
+- 12 weeks, at least 2 lessons per week (24+ rows)
+- SLOs start with action verbs (identify, describe, demonstrate, compare)
+- Week 7 = Mid-Term Review; Week 12 = End-Term Assessment
+- Resources: KICD textbooks, charts, models, locally available materials
+- Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            mdResult = r.response.text().replace(/^```[a-z]*\n?/, '').replace(/```$/, '');
-            const projHeader = `${adminHeader}<h3 style="text-align:center;">PROJECT GUIDE: ${projectTitle.toUpperCase()}</h3>`;
-            const html = `${projHeader}${mdResult.replace(/\n/g,'<br>')}${sigBlock}`;
-            return res.json({ html, markdown: mdResult });
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">SCHEME OF WORK — ${subject} | ${grade} | Term ${term}</h3>${raw}${sigBlock}`;
         }
 
-        // ── New Assessment Tools ──
-        if (['peer', 'oral', 'self'].includes(documentType)) {
-            const toolNames = { peer: 'Peer Assessment Guide', oral: 'Oral Questioning Framework', self: 'Self-Assessment Journal' };
-            prompt = `You are a KICD CBC assessment specialist. Generate a ${toolNames[documentType]} for:
-Grade: ${grade} | Subject: ${subject} | Topic: ${strand || 'Any'}
+        // ── LESSON PLAN ──
+        else if (documentType === 'plan') {
+            const prompt = `You are a strict KICD CBC expert. Generate a complete Lesson Plan strictly aligned with the KICD curriculum for ONE lesson:
+Grade: ${grade} | Learning Area: ${subject} | Term: ${term} | Strand: ${strand}
+Facilitator: ${teacherName}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
 
-Output in clean Markdown with headings:
-## ${toolNames[documentType].toUpperCase()}
-- For ${documentType === 'peer' ? 'Learner to Learner' : documentType === 'self' ? 'Learner Reflection' : 'Teacher questioning'}
-- Include a specific list of ${documentType === 'oral' ? 'Open-ended Questions' : 'Reflective Statements'}
-- Add a small blank observation/score table if applicable.
-Align strictly with Kenyan CBC and learner-centered values.`;
+Output HTML only with these clearly labelled sections using <h4 style="${H4}">:
+
+1. ADMINISTRATIVE DETAILS — <table> with: School, Grade, Learning Area, Strand, Sub-strand, Date (blank line), Time (blank), Duration (40 mins), No. of Learners (blank)
+
+2. SPECIFIC LEARNING OUTCOMES — <ol> with 3-4 outcomes (Bloom's action verbs)
+
+3. KEY INQUIRY QUESTIONS — <ol> with 2-3 open-ended questions
+
+4. CORE COMPETENCIES & VALUES — <ul> (Communication, Critical Thinking, Creativity, Collaboration, Citizenship)
+
+5. PCIs — <ul> (Pertinent & Contemporary Issues relevant to topic)
+
+6. LEARNING RESOURCES — <ul> (KICD textbooks, charts, locally available materials)
+
+7. LESSON DEVELOPMENT — <table> columns: Phase | Facilitator Activity | Learner Activity | Time (mins)
+   Rows: Introduction (5 min) | Development—Core Activity (25 min) | Application/Practice (7 min) | Conclusion (3 min)
+
+8. DIFFERENTIATED ACTIVITIES — <table>: Fast Learners | Slow Learners
+
+9. FACILITATOR'S REFLECTION — <table>: What went well? | What needs improvement? | Follow-up action?
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            mdResult = r.response.text().replace(/^```[a-z]*\n?/, '').replace(/```$/, '');
-            const html = `${adminHeader}<h3 style="text-align:center;">${toolNames[documentType].toUpperCase()}</h3><div>${mdResult.replace(/\n/g,'<br>')}</div>${sigBlock}`;
-            return res.json({ html, markdown: mdResult });
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">LESSON PLAN — ${subject} | ${grade} | Term ${term}</h3>${raw}${sigBlock}`;
         }
 
-        // ── Anecdotal Record (Blueprint Template) ──
-        if (documentType === 'anecdotal') {
-            const html = `
-                ${adminHeader}
-                <h3 style="text-align:center;">ANECDOTAL RECORD (BLUEPRINT)</h3>
-                <table style="width:100%; border-collapse:collapse;">
-                    <tr><td style="border:1px solid #000; padding:8px; width:25%;"><strong>Learner Name:</strong></td><td style="border:1px solid #000; padding:8px;">________________________________</td></tr>
-                    <tr><td style="border:1px solid #000; padding:8px;"><strong>Date/Time:</strong></td><td style="border:1px solid #000; padding:8px;">________________________________</td></tr>
-                    <tr><td style="border:1px solid #000; padding:8px;"><strong>Context / Setting:</strong></td><td style="border:1px solid #000; padding:8px;">________________________________</td></tr>
-                </table>
-                <br/>
-                <div style="border:1px solid #000; min-height:150px; padding:10px;">
-                    <strong>Observation (Objective Description of Behavior):</strong><br/>
-                    ________________________________________________________________<br/>
-                    ________________________________________________________________
-                </div>
-                <br/>
-                <div style="border:1px solid #000; min-height:100px; padding:10px;">
-                    <strong>Interpretation / Competency Demonstrated:</strong><br/>
-                    ________________________________________________________________
-                </div>
-                ${sigBlock}
-            `;
+        // ── RUBRIC ──
+        else if (documentType === 'rubric') {
+            const prompt = `KICD CBC assessment specialist. Generate a complete Assessment Rubric strictly aligned with KICD standards for:
+Grade: ${grade} | Learning Area: ${subject} | Topic: ${strand || subject}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+
+Output ONE HTML <table> columns: Assessment Criteria | Exceeding (EE) | Meeting (ME) | Approaching (AE) | Below (BE)
+- 5-6 criteria rows with specific observable descriptors per cell
+- Final row: TOTAL SCORE | /[max] | | |
+After table: <p><strong>Key:</strong> EE=4 | ME=3 | AE=2 | BE=1</p>
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            const r = await model.generateContent(prompt);
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">ASSESSMENT RUBRIC — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
+        }
+
+        // ── CHECKLIST ──
+        else if (documentType === 'checklist') {
+            const prompt = `KICD CBC assessment specialist. Generate an Observation Checklist strictly aligned with KICD standards for:
+Grade: ${grade} | Learning Area: ${subject} | Topic: ${strand || subject}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+
+Output:
+1. ONE HTML <table> columns: No. | Learner Name | Specific Learning Outcome | Observation Notes | L | P | B | Date | Remarks — with 20 blank rows
+2. <p><strong>Key:</strong> L=Learnt &nbsp; P=Progressing &nbsp; B=Beginning</p>
+3. Small summary <table>: Total Learners | Achieved Outcome | Need Support | Facilitator Action
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            const r = await model.generateContent(prompt);
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">OBSERVATION CHECKLIST — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
+        }
+
+        // ── PROJECT GUIDE ──
+        else if (documentType === 'project') {
+            const prompt = `KICD CBC expert. Generate a complete CBC Project Guide strictly aligned with the KICD curriculum:
+Title: ${projectTitle} | Grade: ${grade} | Learning Area: ${subject}
+Duration: ${projectTime} | Facilitator: ${teacherName}
+Outcomes: ${projectOutcomes} | Resources: ${resources || 'AI-suggested'}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+
+Output HTML sections using <h4 style="${H4}"> headings:
+1. PROJECT OVERVIEW — <table>: Title, Learning Area, Grade, Duration, Group Size, Term
+2. RATIONALE — <p> (real-world Kenyan context, 2-3 sentences)
+3. SPECIFIC LEARNING OUTCOMES — <ol> (action verbs, KICD-aligned)
+4. CORE COMPETENCIES & VALUES — <table>: Competency | How It Is Developed
+5. REQUIRED RESOURCES — <table>: Resource | Quantity | Where to Source (Kenya)
+6. PROJECT PHASES — <table>: Phase | Activities | Facilitator's Role | Learner's Role | Duration
+   (Preparation → Investigation → Design/Action → Presentation → Reflection)
+7. ASSESSMENT RUBRIC — <table>: Criteria | EE | ME | AE | BE (3-4 project-specific criteria)
+8. SAFETY GUIDELINES — <ul>
+9. FACILITATOR'S REFLECTION — blank <table>: What worked | Improvements | Next steps
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            const r = await model.generateContent(prompt);
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            const hdr = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">PROJECT GUIDE: ${(projectTitle||'').toUpperCase()}</h3>`;
+            return res.json({ html: `${hdr}${raw}${sigBlock}`, markdown: raw });
+        }
+
+        // ── PEER ASSESSMENT ──
+        else if (documentType === 'peer') {
+            const prompt = `KICD CBC assessment specialist. Peer Assessment Guide strictly aligned with KICD standards for:
+Grade: ${grade} | Learning Area: ${subject} | Topic: ${strand || subject}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+Output HTML sections (<h4 style="${H4}">):
+1. PURPOSE — <p>
+2. INSTRUCTIONS FOR LEARNERS — <ol> (how to assess a peer respectfully)
+3. PEER CHECKLIST — <table>: Criteria | Yes | Partially | Not Yet | Comments (6-8 topic-specific criteria)
+4. OPEN-ENDED FEEDBACK — <ul>: "One thing my peer did well...", "One suggestion I have...", "What I learnt from my peer..."
+5. SCORE SUMMARY — <table>: Total Criteria | Achieved | Score /[max]
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            const r = await model.generateContent(prompt);
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">PEER ASSESSMENT GUIDE — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
+        }
+
+        // ── ORAL QUESTIONING ──
+        else if (documentType === 'oral') {
+            const prompt = `KICD CBC assessment specialist. Oral Questioning Framework strictly aligned with KICD standards for:
+Grade: ${grade} | Learning Area: ${subject} | Topic: ${strand || subject}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+Output HTML sections (<h4 style="${H4}">):
+1. PURPOSE — <p>
+2. QUESTION BANK — <table>: Cognitive Level | Question | Expected Response | Assessment Focus
+   (2 questions per Bloom's level: Remembering, Understanding, Applying, Analysing, Evaluating, Creating)
+3. OBSERVATION RECORD — <table>: Learner Name | Question Asked | Response Quality (1-4) | Notes | Follow-up (10 blank rows)
+4. RATING SCALE — <p>: 1=No response | 2=Partial | 3=Adequate | 4=Excellent
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            const r = await model.generateContent(prompt);
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">ORAL QUESTIONING FRAMEWORK — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
+        }
+
+        // ── SELF-ASSESSMENT ──
+        else if (documentType === 'self') {
+            const prompt = `KICD CBC assessment specialist. Self-Assessment Journal strictly aligned with KICD standards for:
+Grade: ${grade} | Learning Area: ${subject} | Topic: ${strand || subject}
+${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+Use learner-friendly language. Output HTML sections (<h4 style="${H4}">):
+1. MY LEARNING GOALS — <table>: Goal | Did I achieve it? (Yes/Partly/Not Yet) | Evidence (4-5 goals)
+2. HOW I LEARNT TODAY — <table>: Strategy | I used this ✓ | Comments (Group work, Observation, Research, Experiment, Drawing, Presentation)
+3. MY REFLECTION — <table>: What I learnt | What I found challenging | How I will improve | One question I still have
+4. MY EFFORT RATING — <p> with 5 stars: ★★★★★ (learner circles one) and a blank line for reason
+5. FACILITATOR'S FEEDBACK — blank lined <table> for written feedback + signature line
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            const r = await model.generateContent(prompt);
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">SELF-ASSESSMENT JOURNAL — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
+        }
+
+        // ── ANECDOTAL RECORD ──
+        else if (documentType === 'anecdotal') {
+            html = `${adminHeader}
+<h3 style="text-align:center;font-size:15px;margin-bottom:20px;">ANECDOTAL RECORD</h3>
+<table style="${TS}"><tbody>
+<tr><td style="${TD}width:25%;"><strong>Learner Name:</strong></td><td style="${TD}">________________________________</td><td style="${TD}width:20%;"><strong>Adm. No.:</strong></td><td style="${TD}">____________</td></tr>
+<tr><td style="${TD}"><strong>Date:</strong></td><td style="${TD}">________________________________</td><td style="${TD}"><strong>Time:</strong></td><td style="${TD}">____________</td></tr>
+<tr><td style="${TD}"><strong>Context/Setting:</strong></td><td colspan="3" style="${TD}">________________________________</td></tr>
+</tbody></table>
+<div style="border:1px solid #000;min-height:110px;padding:10px;margin-bottom:14px;"><strong>Observation (Objective, factual description):</strong><br><br>________________________________________________________________________________<br><br>________________________________________________________________________________</div>
+<div style="border:1px solid #000;min-height:90px;padding:10px;margin-bottom:14px;"><strong>Interpretation / Competency Demonstrated:</strong><br><br>________________________________________________________________________________</div>
+<div style="border:1px solid #000;min-height:70px;padding:10px;margin-bottom:14px;"><strong>Follow-up Action / Support Needed:</strong><br><br>________________________________________________________________________________</div>
+${sigBlock}`;
             return res.json({ html, markdown: 'Anecdotal Template' });
         }
 
-        const r = await model.generateContent(prompt);
-        mdResult = r.response.text().replace(/^```[a-z]*\n?/, '').replace(/```$/, '');
-        const finalHtml = `${adminHeader}${mdResult}${sigBlock}`;
-        res.json({ html: finalHtml, markdown: mdResult });
-
+        if (!html) return res.status(400).json({ error: `Unknown document type: ${documentType}` });
+        res.json({ html, markdown: '' });
     } catch (error) {
+        console.error('[GENERATE ERROR]', error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
+

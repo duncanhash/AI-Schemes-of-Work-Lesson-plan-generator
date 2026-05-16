@@ -9,15 +9,25 @@ const token = localStorage.getItem('cbc_token');
 const userEmail = localStorage.getItem('cbc_email');
 
 // ── Auth Guard ──
-if (!token && !window.location.pathname.includes('login.html')) {
+const publicPages = ['login.html', 'home.html', '/'];
+const isPublicPage = publicPages.some(page => window.location.pathname.endsWith(page) || window.location.pathname === page);
+
+if (!token && !isPublicPage) {
     console.warn("Unauthorized access. Redirecting to login...");
+    window.location.href = '/login.html';
+}
+
+function logout() {
+    localStorage.removeItem('cbc_token');
+    localStorage.removeItem('cbc_email');
+    localStorage.removeItem('cbc_name');
     window.location.href = '/login.html';
 }
 
 // ── GLOBAL DASHBOARD INITIALIZATION ──
 window.addEventListener('DOMContentLoaded', () => {
     console.log("Pedagogy Engine: Dashboard DOM Ready.");
-    
+
     try {
         setupNavigation();
         populateProfileFields();
@@ -34,8 +44,9 @@ window.addEventListener('DOMContentLoaded', () => {
 async function populateProfileFields() {
     try {
         const res = await fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.status === 401 || res.status === 403) return logout();
         const profile = await res.json();
-        
+
         const pTeacher = document.getElementById('profile-teacher');
         const pSchool = document.getElementById('profile-school');
         const uEmail = document.getElementById('userEmailDisplay');
@@ -43,14 +54,14 @@ async function populateProfileFields() {
         if (pTeacher) pTeacher.value = profile.name || '';
         if (pSchool) pSchool.value = profile.school || '';
         if (uEmail) uEmail.textContent = userEmail || 'facilitator@pedagogy.com';
-        
+
         // Also update the welcome header - Use only first name
         const header = document.getElementById('welcomeHeader');
         if (header) {
             const firstName = profile.name ? profile.name.split(' ')[0] : 'Facilitator';
             header.textContent = `Welcome back, ${firstName}`;
         }
-        
+
         // Populate subjects
         const pSubjects = document.getElementById('profile-subjects');
         if (pSubjects) pSubjects.value = profile.subjects || '';
@@ -67,15 +78,18 @@ function setupNavigation() {
 
                 document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
-                
+
                 btn.classList.add('active');
                 const targetEl = document.getElementById(target);
-                if (targetEl) targetEl.classList.add('active');
-                
+                if (targetEl) {
+                    targetEl.classList.add('active');
+                    clearFormInputs(targetEl);
+                }
+
                 // Tab-specific actions
                 if (target === 'view-chat') loadChat();
                 if (target === 'view-planner') renderPlanner();
-                
+
                 // Reset UI
                 const preview = document.getElementById('preview-area');
                 const dlBar = document.getElementById('download-bar');
@@ -179,7 +193,7 @@ function applyStrandsSelection() {
 async function suggestField(inputId, fieldType, context) {
     const bubble = document.getElementById(`bubble-${inputId}`);
     let grade, subject, strand;
-    
+
     if (context === 'assess') {
         grade = document.getElementById('assess-grade-subject').value;
         subject = document.getElementById('assess-grade-subject').value;
@@ -206,7 +220,7 @@ async function suggestField(inputId, fieldType, context) {
         });
         const data = await res.json();
         const suggestionText = data.suggestion || "No suggestion found.";
-        const safeSuggestion = suggestionText.replace(/`/g,'\\`').replace(/\n/g, '\\n');
+        const safeSuggestion = suggestionText.replace(/`/g, '\\`').replace(/\n/g, '\\n');
 
         bubble.innerHTML = `
             <div style="margin-bottom:10px; font-size:13px; opacity:0.9;">${suggestionText}</div>
@@ -252,14 +266,14 @@ async function generateDocument(isTemplate = false) {
         if (res.status === 401 || res.status === 403) return logout();
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Generation failed');
-        
+
         showProgress(100, "Done!");
         setTimeout(() => {
             displayOutput(data.html);
             hideProgress();
         }, 500);
-    } catch (err) { 
-        alert("Generation Error: " + err.message); 
+    } catch (err) {
+        alert("Generation Error: " + err.message);
         hideProgress();
     }
 }
@@ -277,28 +291,40 @@ async function generateProject() {
             projectOutcomes: document.getElementById('proj-outcomes').value,
             resources: document.getElementById('proj-resources').value,
             extraInstructions: document.getElementById('extra-proj').value,
+            teacherName: document.getElementById('profile-teacher').value || 'Facilitator',
             schoolName: document.getElementById('profile-school').value || 'Institution'
         };
 
-        if (!payload.projectTitle || !payload.projectOutcomes) return alert("Title and Outcomes are required.");
+        if (!payload.projectTitle || !payload.projectOutcomes) return alert('Project Title and Learning Outcomes are required.');
 
-        showProgress(50, "Designing project guide...");
+        showProgress(20, 'Designing project guide...');
+        setTimeout(() => showProgress(60, 'Building phases and rubric...'), 1200);
         const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify(payload)
         });
+        if (res.status === 401 || res.status === 403) return logout();
         const data = await res.json();
-        
-        showProgress(100, "Done!");
+        if (!res.ok) throw new Error(data.error || 'Project generation failed');
+
+        showProgress(100, 'Done!');
         setTimeout(() => {
             displayOutput(data.html);
             hideProgress();
         }, 500);
-    } catch (err) { 
-        alert(err.message); 
+    } catch (err) {
+        alert('Error: ' + err.message);
         hideProgress();
     }
+}
+
+// Called when assessment tool type changes (show/hide specific inputs)
+function onAssessTypeChange() {
+    // Anecdotal record needs no topic — all other types do
+    const type = document.getElementById('assess-tool-type').value;
+    const commonInputs = document.getElementById('assess-common-inputs');
+    if (commonInputs) commonInputs.style.display = type === 'anecdotal' ? 'none' : 'block';
 }
 
 function downloadROWTemplate() {
@@ -314,7 +340,10 @@ function displayOutput(html) {
     const preview = document.getElementById('preview-area');
     const dlBar = document.getElementById('download-bar');
     if (!preview || !dlBar) return;
-    preview.innerHTML = html;
+
+    // XSS Protection
+    const sanitizedHtml = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "");
+    preview.innerHTML = sanitizedHtml;
     preview.style.display = 'block';
     dlBar.style.display = 'block';
     preview.scrollIntoView({ behavior: 'smooth' });
@@ -331,10 +360,10 @@ async function handleAssessmentGeneration() {
         const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ 
-                documentType: type, 
-                grade: gradeSubject, 
-                subject: gradeSubject, 
+            body: JSON.stringify({
+                documentType: type,
+                grade: gradeSubject,
+                subject: gradeSubject,
                 strand: topic,
                 extraInstructions: document.getElementById('extra-assess').value,
                 schoolName: document.getElementById('profile-school').value || 'Institution'
@@ -343,14 +372,14 @@ async function handleAssessmentGeneration() {
         if (res.status === 401 || res.status === 403) return logout();
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Assessment generation failed');
-        
+
         showProgress(100, "Done!");
         setTimeout(() => {
             displayOutput(data.html);
             hideProgress();
         }, 500);
-    } catch (err) { 
-        alert(err.message); 
+    } catch (err) {
+        alert(err.message);
         hideProgress();
     }
 }
@@ -359,8 +388,21 @@ async function handleAssessmentGeneration() {
 let currentChatChannel = 'staff';
 function setChatChannel(chan) {
     currentChatChannel = chan;
-    document.getElementById('btn-chan-staff').classList.toggle('active', chan === 'staff');
-    document.getElementById('btn-chan-parents').classList.toggle('active', chan === 'parents');
+    const staffBtn = document.getElementById('btn-chan-staff');
+    const parentsBtn = document.getElementById('btn-chan-parents');
+
+    if (staffBtn) staffBtn.classList.toggle('active', chan === 'staff');
+    if (parentsBtn) parentsBtn.classList.toggle('active', chan === 'parents');
+
+    // Update Premium UI Header
+    const title = document.getElementById('current-chat-title');
+    const avatar = document.getElementById('current-chat-avatar');
+    if (title && avatar) {
+        title.innerText = chan === 'staff' ? 'Staff Room' : 'Parents Hub';
+        avatar.innerText = chan === 'staff' ? '👨‍🏫' : '👪';
+        avatar.style.background = chan === 'staff' ? 'linear-gradient(135deg, #7c6bff, #5643e6)' : 'linear-gradient(135deg, #00d4aa, #00a388)';
+    }
+
     loadChat();
 }
 
@@ -414,14 +456,17 @@ async function addPortfolioEntry() {
         if (!studentName || !projectTitle || files.length === 0) return alert("All fields and photos required.");
 
         const photos = [];
-        for (let f of files) photos.push(await toBase64(f));
+        for (let f of files) {
+            if (f.size > 2 * 1024 * 1024) return alert(`File ${f.name} is too large. Max 2MB per photo.`);
+            photos.push(await toBase64(f));
+        }
 
         const res = await fetch('/api/portfolio', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ studentName, projectTitle, description, photos })
         });
-        
+
         if (res.ok) {
             document.getElementById('port-student').value = '';
             document.getElementById('port-title').value = '';
@@ -437,10 +482,10 @@ async function loadPortfolio() {
     try {
         const grid = document.getElementById('portfolio-grid');
         if (!grid) return;
-        
+
         const res = await fetch('/api/portfolio', { headers: { 'Authorization': `Bearer ${token}` } });
         const items = await res.json();
-        
+
         grid.innerHTML = items.map(item => `
             <div class="portfolio-card">
                 <div class="port-header"><h3>${item.projectTitle}</h3><p>Learner: ${item.studentName}</p></div>
@@ -448,6 +493,7 @@ async function loadPortfolio() {
                 <div class="port-body">
                     <p>${item.description ? item.description.substring(0, 60) + '...' : ''}</p>
                     <div class="port-actions">
+                        <button class="share" onclick="shareWithParent('${item._id}', '${item.studentName}', '${item.projectTitle}', \`${item.description || ''}\`)">📤 Share</button>
                         <button class="del" onclick="deletePortfolioEntry('${item._id}')">🗑️</button>
                     </div>
                 </div>
@@ -464,6 +510,30 @@ async function deletePortfolioEntry(id) {
     } catch (e) { alert("Delete failed"); }
 }
 
+async function shareWithParent(recordId, studentName, projectTitle, description) {
+    const parentEmail = prompt(`Enter Parent's Email to share ${studentName}'s work:`);
+    if (!parentEmail) return;
+
+    try {
+        const portfolioHtml = `
+            <div style="border:1px solid #ddd; padding:15px; border-radius:10px;">
+                <h3>${projectTitle}</h3>
+                <p><strong>Learner:</strong> ${studentName}</p>
+                <p>${description}</p>
+            </div>
+        `;
+
+        const res = await fetch('/api/share-portfolio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ parentEmail, studentName, projectTitle, portfolioHtml, recordId })
+        });
+        const data = await res.json();
+        if (res.ok) alert("✅ Shared successfully!");
+        else alert("Failed: " + data.error);
+    } catch (e) { alert("Share error: " + e.message); }
+}
+
 // ── Weekly Planner ──
 const timeSlots = ["08:00 - 08:35", "08:35 - 09:10", "09:10 - 09:45", "10:15 - 10:50", "10:50 - 11:25", "11:25 - 12:00", "14:00 - 14:35"];
 let plannerData = {};
@@ -472,18 +542,23 @@ async function renderPlanner() {
     try {
         const body = document.getElementById('planner-body');
         if (!body) return;
-        
+
         const res = await fetch('/api/planner', { headers: { 'Authorization': `Bearer ${token}` } });
         plannerData = await res.json();
-        
+
         body.innerHTML = '';
-        timeSlots.forEach(time => {
+        timeSlots.forEach((time, tIdx) => {
             const row = document.createElement('tr');
-            row.innerHTML = `<td><strong>${time}</strong></td>` + 
-                [1,2,3,4,5].map(day => {
-                    const val = plannerData[`${time}-${day}`] || '';
-                    return `<td><textarea class="planner-slot-input" oninput="updatePlannerData('${time}-${day}', this.value)">${val}</textarea></td>`;
-                }).join('');
+            const timeId = `time-${tIdx}`;
+            const timeVal = plannerData[timeId] || time;
+
+            let rowHtml = `<td><input type="text" value="${timeVal}" class="planner-input" oninput="updatePlannerData('${timeId}', this.value)" style="font-weight:700; color:var(--accent);"></td>`;
+
+            [1, 2, 3, 4, 5].forEach(day => {
+                const id = `d${day}-t${tIdx}`;
+                rowHtml += `<td><textarea class="planner-slot-input" oninput="updatePlannerData('${id}', this.value)">${plannerData[id] || ''}</textarea></td>`;
+            });
+            row.innerHTML = rowHtml;
             body.appendChild(row);
         });
     } catch (e) { console.error("Planner Render Error:", e); }
@@ -491,6 +566,12 @@ async function renderPlanner() {
 
 function updatePlannerData(id, val) {
     plannerData[id] = val;
+}
+
+function clearPlanner() {
+    if (!confirm("Clear all slots for this week?")) return;
+    plannerData = {};
+    renderPlanner();
 }
 
 async function savePlanner() {
@@ -513,7 +594,7 @@ async function saveProfile() {
         const name = document.getElementById('profile-teacher').value;
         const school = document.getElementById('profile-school').value;
         const subjects = document.getElementById('profile-subjects').value;
-        
+
         // Limit to 2 subjects
         const subList = subjects.split(',').map(s => s.trim()).filter(s => s);
         if (subList.length > 2) return alert("Teachers are limited to a maximum of 2 subjects.");
@@ -535,6 +616,47 @@ async function saveProfile() {
     } catch (e) { console.error("Profile Save Error:", e); }
 }
 
+async function uploadCurriculum() {
+    try {
+        const fileInput = document.getElementById('profile-curriculum');
+        if (!fileInput.files.length) return alert("Please select a file first.");
+
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('curriculum', file);
+
+        showProgress(50, "Uploading & Processing Curriculum...");
+
+        const res = await fetch('/api/profile/curriculum', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+        });
+
+        if (res.ok) {
+            hideProgress();
+            const msg = document.getElementById('curriculum-msg');
+            if (msg) {
+                msg.style.display = 'block';
+                setTimeout(() => msg.style.display = 'none', 3000);
+            }
+            fileInput.value = '';
+        } else {
+            const err = await res.json();
+            throw new Error(err.error || "Upload failed");
+        }
+    } catch (e) {
+        hideProgress();
+        alert("Upload Error: " + e.message);
+    }
+}
+
+function clearFormInputs(section) {
+    if (!section || section.id === 'view-profile' || section.id === 'view-chat') return;
+    const inputs = section.querySelectorAll('input[type="text"], textarea');
+    inputs.forEach(input => input.value = '');
+}
+
 function showProgress(pct, label) {
     const wrap = document.getElementById('progress-wrap');
     if (wrap) {
@@ -543,13 +665,24 @@ function showProgress(pct, label) {
         document.getElementById('progress-label').textContent = label;
     }
 }
-function hideProgress() { 
+function hideProgress() {
     const wrap = document.getElementById('progress-wrap');
-    if (wrap) wrap.style.display = 'none'; 
+    if (wrap) wrap.style.display = 'none';
 }
-function toBase64(f) { return new Promise((res, rej) => {
-    const r = new FileReader(); r.readAsDataURL(f); r.onload = () => res(r.result); r.onerror = e => rej(e);
-});}
+function toBase64(f) {
+    return new Promise((res, rej) => {
+        const r = new FileReader(); r.readAsDataURL(f); r.onload = () => res(r.result); r.onerror = e => rej(e);
+    });
+}
+
+function getGeneratedFilename(ext) {
+    let filename = 'Pedagogy_Document';
+    const h3 = document.querySelector('#preview-area h3');
+    if (h3 && h3.textContent) {
+        filename = h3.textContent.replace(/[^a-zA-Z0-9 ]/g, '').trim().replace(/\s+/g, '_');
+    }
+    return `${filename}.${ext}`;
+}
 
 async function downloadDocx() {
     try {
@@ -559,18 +692,23 @@ async function downloadDocx() {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ html })
         });
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || "DOCX export failed");
+        }
         const blob = await res.blob();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'Pedagogy_Document.docx';
+        a.download = getGeneratedFilename('docx');
         a.click();
-    } catch (e) { alert("Download failed."); }
+    } catch (e) { alert("Download failed: " + e.message); }
 }
+
 function downloadHTML() {
     const blob = new Blob([document.getElementById('preview-area').innerHTML], { type: 'text/html' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'Pedagogy_Document.html';
+    a.download = getGeneratedFilename('html');
     a.click();
 }
 
@@ -578,18 +716,39 @@ async function updateStorageUsage() {
     try {
         const res = await fetch('/api/storage/usage', { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
-        
+
         const bar = document.getElementById('storage-bar-inner');
         const text = document.getElementById('storage-text');
-        
+
         if (bar && text) {
             bar.style.width = data.percent + '%';
             text.textContent = `${data.usedMB} MB / ${data.totalMB} MB`;
-            
+
             // Visual warning if high
             if (data.percent > 80) bar.style.background = '#ff6b6b';
             else if (data.percent > 50) bar.style.background = '#ffcc00';
             else bar.style.background = 'linear-gradient(90deg, var(--accent), var(--accent2))';
         }
     } catch (e) { console.error("Storage update error:", e); }
+}
+
+async function pushToParent() {
+    const parentEmail = prompt("Enter Parent's Email to push this record:");
+    const studentName = prompt("Enter Learner's Full Name:");
+    if (!parentEmail || !studentName) return;
+
+    const preview = document.getElementById('preview-area');
+    const title = preview.querySelector('h3') ? preview.querySelector('h3').innerText : "Assessment Record";
+    const content = preview.innerHTML;
+
+    try {
+        const res = await fetch('/api/parent/push-record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ parentEmail, studentName, title, content })
+        });
+        const data = await res.json();
+        if (res.ok) alert("✅ Record pushed successfully to Parent's Dashboard!");
+        else alert("Push failed: " + data.error);
+    } catch (e) { alert("Error: " + e.message); }
 }
