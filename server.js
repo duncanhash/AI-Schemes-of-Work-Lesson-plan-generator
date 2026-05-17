@@ -195,7 +195,10 @@ app.post('/api/suggest', authenticateToken, async (req, res) => {
         topic: `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, list 5 common topics/sub-strands. Return only names, one per line.`,
         criteria: `For assessing ${grade} ${subject} (topic: ${strand}) strictly according to KICD CBC standards in Kenya, list 4 assessment criteria for a rubric. Return only criteria names, one per line.`,
         anecdotal: `Suggest 3 possible learning behaviors or breakthrough observations to watch for in ${grade} ${subject} while teaching "${strand}" based on KICD CBC.`,
-        resources: `Suggest 5 essential learning resources needed for a project on "${strand}" for ${grade} ${subject} in a Kenyan school setting based on KICD CBC.`
+        resources: `Suggest 5 essential learning resources needed for a project on "${strand}" for ${grade} ${subject} in a Kenyan school setting based on KICD CBC.`,
+        'lp-outcomes': `For ${grade} ${subject} on Strand: ${strand}, Term ${term} strictly following the KICD CBC syllabus in Kenya, write 3-4 specific learning outcomes starting with action verbs (Bloom's taxonomy).`,
+        'lp-competencies': `Suggest KICD Core Competencies (e.g., Communication, Critical Thinking, Creativity) and Values (e.g., Respect, Love, Unity) to be developed for ${grade} ${subject} on Strand: ${strand}.`,
+        'lp-extended': `Suggest 2 creative extended activities or homework ideas for ${grade} ${subject} on Strand: ${strand} aligned with the KICD CBC framework.`
     };
     if (field === 'strands') {
         prompts.strands = `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, list ALL the main strands (learning areas) for this term. Return as a plain list, one per line. No extra text.`;
@@ -487,7 +490,7 @@ app.post('/api/planner', authenticateToken, async (req, res) => {
 
 // ── Generate Document (AI) ──
 app.post('/api/generate', authenticateToken, async (req, res) => {
-    const { documentType, grade, term, subject, strand, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources } = req.body;
+    const { documentType, grade, term, subject, strand, subStrand, learningOutcomes, competencies, extendedActivity, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources } = req.body;
     console.log(`[GENERATING] ${documentType} (Template: ${isTemplate}) for ${teacherName} at ${schoolName}`);
     try {
         const user = await User.findOne({ email: req.user.email });
@@ -502,7 +505,7 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
 <p style="margin:4px 0;font-style:italic;font-size:13px;">Competency-Based Curriculum (CBC)</p>
 <table style="${TS}margin-top:12px;"><tbody>
 <tr><td style="${TD}" width="25%"><strong>Facilitator:</strong> ${teacherName || '________________'}</td><td style="${TD}" width="25%"><strong>Learning Area:</strong> ${subject || '________________'}</td><td style="${TD}" width="25%"><strong>Grade:</strong> ${grade || '________________'}</td><td style="${TD}" width="25%"><strong>Term:</strong> ${term || '________________'}</td></tr>
-<tr><td colspan="4" style="${TD}"><strong>Strand/Sub-strand:</strong> ${strand || '________________'}</td></tr>
+<tr><td colspan="4" style="${TD}"><strong>Strand/Sub-strand:</strong> ${strand || '________________'}${subStrand ? ' / ' + subStrand : ''}</td></tr>
 </tbody></table></div>`;
 
         const sigBlock = `<div style="margin-top:40px;border-top:1px solid #000;padding-top:16px;display:flex;justify-content:space-between;font-size:13px;">
@@ -552,31 +555,43 @@ Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
 
         // ── LESSON PLAN ──
         else if (documentType === 'plan') {
-            const prompt = `You are a strict KICD CBC expert. Generate a complete Lesson Plan strictly aligned with the KICD curriculum for ONE lesson:
-Grade: ${grade} | Learning Area: ${subject} | Term: ${term} | Strand: ${strand}
-Facilitator: ${teacherName}
-${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+            const prompt = `You are a strict KICD CBC expert in Kenya. Generate a complete Lesson Plan strictly aligned with KICD standards for:
+Grade: ${grade} | Learning Area (Subject): ${subject} | Term: ${term}
+Strand: ${strand} | Sub-strand: ${subStrand || '________________'}
+Facilitator: ${teacherName} | School: ${schoolName}
+
+${learningOutcomes ? `SPECIFIC LEARNING OUTCOMES (Use these exact outcomes provided by the teacher): ${learningOutcomes}` : 'SPECIFIC LEARNING OUTCOMES: Generate 3-4 highly specific, KICD-compliant learning outcomes starting with action verbs (Bloom\'s taxonomy).'}
+${competencies ? `CORE COMPETENCIES & VALUES (Use these exact competencies provided by the teacher): ${competencies}` : 'CORE COMPETENCIES & VALUES: Generate 4 relevant competencies and values to be developed (e.g., Critical Thinking, Collaboration, Respect).'}
+${extendedActivity ? `EXTENDED ACTIVITY / HOMEWORK (Use this exact activity provided by the teacher): ${extendedActivity}` : 'EXTENDED ACTIVITY / HOMEWORK: Suggest 1-2 creative extended activities or homework ideas relevant to the lesson.'}
+${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
 
 Output HTML only with these clearly labelled sections using <h4 style="${H4}">:
 
 1. ADMINISTRATIVE DETAILS — <table> with: School, Grade, Learning Area, Strand, Sub-strand, Date (blank line), Time (blank), Duration (40 mins), No. of Learners (blank)
 
-2. SPECIFIC LEARNING OUTCOMES — <ol> with 3-4 outcomes (Bloom's action verbs)
+2. SPECIFIC LEARNING OUTCOMES — <ol> displaying the specific learning outcomes.
 
-3. KEY INQUIRY QUESTIONS — <ol> with 2-3 open-ended questions
+3. KEY INQUIRY QUESTIONS — <ol> with 2-3 open-ended questions.
 
-4. CORE COMPETENCIES & VALUES — <ul> (Communication, Critical Thinking, Creativity, Collaboration, Citizenship)
+4. CORE COMPETENCIES & VALUES — <ul> displaying the core competencies and values.
 
-5. PCIs — <ul> (Pertinent & Contemporary Issues relevant to topic)
+5. PCIs — <ul> (Pertinent & Contemporary Issues relevant to topic).
 
-6. LEARNING RESOURCES — <ul> (KICD textbooks, charts, locally available materials)
+6. LEARNING RESOURCES — <ul> (KICD textbooks, charts, locally available materials).
 
 7. LESSON DEVELOPMENT — <table> columns: Phase | Facilitator Activity | Learner Activity | Time (mins)
-   Rows: Introduction (5 min) | Development—Core Activity (25 min) | Application/Practice (7 min) | Conclusion (3 min)
+   Rows: 
+   - Introduction (5 min) with AI suggested activities.
+   - Development—Core Activity (25 min) with AI suggested activities.
+   - Application/Practice (7 min) with AI suggested activities.
+   - Conclusion (3 min) — IMPORTANT: Both 'Facilitator Activity' and 'Learner Activity' cells MUST be left completely empty (just blank space or underscores) for the teacher to fill manually.
 
-8. DIFFERENTIATED ACTIVITIES — <table>: Fast Learners | Slow Learners
+8. EXTENDED ACTIVITY — <p> displaying the extended activity or homework.
 
-9. FACILITATOR'S REFLECTION — <table>: What went well? | What needs improvement? | Follow-up action?
+9. DIFFERENTIATED ACTIVITIES — <table> columns: Fast Learners | Slow Learners with AI suggestions.
+
+10. FACILITATOR'S REFLECTION — <table> columns: What went well? | What needs improvement? | Follow-up action? — IMPORTANT: All cells in this table MUST be left completely empty (blank space or underscores) so the teacher can fill them in manually.
+
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
             const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();

@@ -189,6 +189,16 @@ function applyStrandsSelection() {
     closeBubble('sow-strand');
 }
 
+function toggleGenType(type) {
+    if (type === 'sow') {
+        document.getElementById('sow-inputs-form').style.display = 'block';
+        document.getElementById('plan-inputs-form').style.display = 'none';
+    } else {
+        document.getElementById('sow-inputs-form').style.display = 'none';
+        document.getElementById('plan-inputs-form').style.display = 'block';
+    }
+}
+
 // ── AI Suggestions ──
 async function suggestField(inputId, fieldType, context) {
     const bubble = document.getElementById(`bubble-${inputId}`);
@@ -202,6 +212,10 @@ async function suggestField(inputId, fieldType, context) {
         grade = document.getElementById('proj-grade').value;
         subject = document.getElementById('proj-subject').value;
         strand = document.getElementById('proj-title').value;
+    } else if (context === 'lp') {
+        grade = document.getElementById('gradeSelect-lp').value;
+        subject = document.getElementById('lp-subject').value;
+        strand = document.getElementById('lp-strand').value;
     } else {
         grade = document.getElementById('gradeSelect-sow').value;
         subject = document.getElementById('sow-subject').value;
@@ -236,21 +250,33 @@ function applySuggestion(id, val) { document.getElementById(id).value = val; clo
 function closeBubble(id) { document.getElementById(`bubble-${id}`).style.display = 'none'; }
 
 // ── Generation ──
-// ── Generation ──
 async function generateDocument(isTemplate = false) {
     try {
         const type = document.querySelector('input[name="gentype-sow"]:checked').value;
-        const payload = {
+        let payload = {
             documentType: type,
-            grade: document.getElementById('gradeSelect-sow').value,
-            term: document.getElementById('termSelect-sow').value,
-            subject: document.getElementById('sow-subject').value,
-            strand: document.getElementById('sow-strand').value,
-            extraInstructions: document.getElementById('extra-sow').value,
             teacherName: document.getElementById('profile-teacher').value || 'Facilitator',
             schoolName: document.getElementById('profile-school').value || 'Institution',
             isTemplate: isTemplate
         };
+
+        if (type === 'sow') {
+            payload.grade = document.getElementById('gradeSelect-sow').value;
+            payload.term = document.getElementById('termSelect-sow').value;
+            payload.subject = document.getElementById('sow-subject').value;
+            payload.strand = document.getElementById('sow-strand').value;
+            payload.extraInstructions = document.getElementById('extra-sow').value;
+        } else {
+            payload.grade = document.getElementById('gradeSelect-lp').value;
+            payload.term = document.getElementById('termSelect-lp').value;
+            payload.subject = document.getElementById('lp-subject').value;
+            payload.strand = document.getElementById('lp-strand').value;
+            payload.subStrand = document.getElementById('lp-substrand').value;
+            payload.learningOutcomes = document.getElementById('lp-outcomes-input').value;
+            payload.competencies = document.getElementById('lp-competencies-input').value;
+            payload.extendedActivity = document.getElementById('lp-extended-input').value;
+            payload.extraInstructions = document.getElementById('extra-sow').value;
+        }
 
         if (!payload.subject || !payload.strand) return alert("Subject and Strands are required.");
 
