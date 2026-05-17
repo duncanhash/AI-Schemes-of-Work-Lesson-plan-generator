@@ -1,13 +1,15 @@
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 
 const DB_PATH = path.join(__dirname, 'local_db.json');
+const USE_MONGO = process.env.MONGODB_URI ? true : false;
 
+// ── LOCAL JSON FALLBACK (Mock Model) ──
 function readDB() {
     if (!fs.existsSync(DB_PATH)) return { users: [], portfolios: [], messages: [], plans: [] };
     return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
 }
-
 function writeDB(data) {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
 }
@@ -17,28 +19,20 @@ class MockModel {
         Object.assign(this, data);
         this._collection = collection;
     }
-
     static async findOne(query) {
         const db = readDB();
         const collectionName = this._collectionName;
         const data = db[collectionName].find(item => Object.keys(query).every(k => item[k] === query[k]));
         return data ? new this(data) : null;
     }
-
     static async find(query) {
         const db = readDB();
         const collectionName = this._collectionName;
         let results = db[collectionName].filter(item => Object.keys(query).every(k => item[k] === query[k]));
-
-        // Mock chainable methods for chat and portfolio
-        results.sort = () => {
-            results.reverse();
-            results.limit = () => results;
-            return results;
-        };
+        results.sort = () => { results.reverse(); return results; };
+        results.limit = (n) => results.slice(0, n);
         return results;
     }
-
     static async findOneAndUpdate(query, update) {
         const db = readDB();
         const collectionName = this._collectionName;
@@ -50,51 +44,73 @@ class MockModel {
         }
         return null;
     }
-
+    static async findOneAndDelete(query) {
+        const db = readDB();
+        const collectionName = this._collectionName;
+        const idx = db[collectionName].findIndex(item => Object.keys(query).every(k => item[k] === query[k]));
+        if (idx > -1) {
+            const deleted = db[collectionName].splice(idx, 1);
+            writeDB(db);
+            return deleted[0];
+        }
+        return null;
+    }
     async save() {
         const db = readDB();
         const collectionName = this._collection;
-        const pk = collectionName === 'users' ? 'email' : (collectionName === 'plans' ? 'userEmail' : null);
-        
         if (!this._id) this._id = Date.now().toString() + Math.random().toString(36).substring(2, 7);
-
-        if (pk) {
-            const idx = db[collectionName].findIndex(item => item[pk] === this[pk]);
-            if (idx > -1) db[collectionName][idx] = { ...this };
-            else db[collectionName].push({ ...this });
-        } else {
-            const idx = this._id ? db[collectionName].findIndex(item => item._id === this._id) : -1;
-            if (idx > -1) db[collectionName][idx] = { ...this };
-            else db[collectionName].push({ ...this });
-        }
+        const idx = db[collectionName].findIndex(item => (item.email && item.email === this.email) || (item._id && item._id === this._id));
+        if (idx > -1) db[collectionName][idx] = { ...this };
+        else db[collectionName].push({ ...this });
         writeDB(db);
         return this;
     }
 }
 
-class User extends MockModel {
-    constructor(data) { super(data, 'users'); }
-    static get _collectionName() { return 'users'; }
-}
+// ── MONGOOSE MODELS ──
+let User, Portfolio, ChatMessage, WeeklyPlan;
 
-class Portfolio extends MockModel {
-    constructor(data) { super(data, 'portfolios'); }
-    static get _collectionName() { return 'portfolios'; }
-}
+if (USE_MONGO) {
+    const userSchema = new mongoose.Schema({
+        name: String, email: { type: String, unique: true }, password: { type: String, required: true },
+        role: { type: String, default: 'teacher' }, otp: String, isVerified: { type: Boolean, default: false },
+        curriculumText: String, school: String, subjects: String,
+        resetOtp: String, resetExpiry: Date
+    });
+    const portfolioSchema = new mongoose.Schema({
+        userEmail: String, studentName: String, projectTitle: String, description: String,
+        photos: [String], sharedWith: String, timestamp: { type: Number, default: Date.now }
+    });
+    const chatSchema = new mongoose.Schema({
+        sender: String, text: String, time: String, channel: { type: String, default: 'staff' },
+        timestamp: { type: Number, default: Date.now }
+    });
+    const planSchema = new mongoose.Schema({ userEmail: { type: String, unique: true }, data: Object });
 
-class ChatMessage extends MockModel {
-    constructor(data) { super(data, 'messages'); }
-    static get _collectionName() { return 'messages'; }
-}
-
-class WeeklyPlan extends MockModel {
-    constructor(data) { super(data, 'plans'); }
-    static get _collectionName() { return 'plans'; }
+    User = mongoose.model('User', userSchema);
+    Portfolio = mongoose.model('Portfolio', portfolioSchema);
+    ChatMessage = mongoose.model('ChatMessage', chatSchema);
+    WeeklyPlan = mongoose.model('WeeklyPlan', planSchema);
+} else {
+    User = class extends MockModel { constructor(d) { super(d, 'users'); } static get _collectionName() { return 'users'; } };
+    Portfolio = class extends MockModel { constructor(d) { super(d, 'portfolios'); } static get _collectionName() { return 'portfolios'; } };
+    ChatMessage = class extends MockModel { constructor(d) { super(d, 'messages'); } static get _collectionName() { return 'messages'; } };
+    WeeklyPlan = class extends MockModel { constructor(d) { super(d, 'plans'); } static get _collectionName() { return 'plans'; } };
 }
 
 const connectDB = async () => {
-    console.warn('⚠️  MONGODB DISCONNECTED: Using Local JSON Database (local_db.json)');
-    if (!fs.existsSync(DB_PATH)) writeDB({ users: [], portfolios: [], messages: [], plans: [] });
+    if (USE_MONGO) {
+        try {
+            await mongoose.connect(process.env.MONGODB_URI);
+            console.log('✅  MONGODB CONNECTED: Persistence active on Atlas');
+        } catch (err) {
+            console.error('❌  MONGODB CONNECTION ERROR:', err.message);
+            process.exit(1);
+        }
+    } else {
+        console.warn('⚠️  MONGODB DISCONNECTED: Using Local JSON Database (local_db.json)');
+        if (!fs.existsSync(DB_PATH)) writeDB({ users: [], portfolios: [], messages: [], plans: [] });
+    }
 };
 
 module.exports = { User, ChatMessage, Portfolio, WeeklyPlan, connectDB };
