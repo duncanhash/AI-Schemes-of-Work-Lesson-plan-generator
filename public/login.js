@@ -163,12 +163,11 @@ loginForm.addEventListener('submit', async (e) => {
             if (data.needsVerify) {
                 registeredEmail = email;
                 sessionStorage.setItem('pending_email', email);
-                document.getElementById('otp-card').style.display = 'block';
-                document.getElementById('login-card').style.display = 'none';
+                showOTP();
                 
                 if (data.debugOtp) {
-                    const otpInput = document.getElementById('otp');
-                    otpInput.value = data.debugOtp;
+                    const otpInput = document.getElementById('otpInput');
+                    if (otpInput) otpInput.value = data.debugOtp;
                     showError("Verifying OTP automatically...");
                     setTimeout(verifyOTP, 1500);
                 }
