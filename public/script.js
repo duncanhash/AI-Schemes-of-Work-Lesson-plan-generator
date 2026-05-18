@@ -34,6 +34,7 @@ window.addEventListener('DOMContentLoaded', () => {
         loadPortfolio();
         updateTerms('sow');
         updateStorageUsage();
+        loadSavedSowDropdown();
         console.log("Pedagogy Engine: All systems green.");
     } catch (e) {
         console.error("Initialization Error:", e);
@@ -89,6 +90,7 @@ function setupNavigation() {
                 // Tab-specific actions
                 if (target === 'view-chat') loadChat();
                 if (target === 'view-planner') renderPlanner();
+                if (target === 'view-sow') loadSavedSowDropdown();
 
                 // Reset UI
                 const preview = document.getElementById('preview-area');
@@ -297,6 +299,21 @@ async function generateDocument(isTemplate = false) {
         setTimeout(() => {
             displayOutput(data.html);
             hideProgress();
+
+            if (type === 'sow' && !isTemplate) {
+                lastGeneratedSow = {
+                    grade: payload.grade,
+                    term: payload.term,
+                    subject: payload.subject,
+                    strands: payload.strand,
+                    html: data.html
+                };
+                const saveBtn = document.getElementById('btn-save-sow-lib');
+                if (saveBtn) saveBtn.style.display = 'inline-block';
+            } else {
+                const saveBtn = document.getElementById('btn-save-sow-lib');
+                if (saveBtn) saveBtn.style.display = 'none';
+            }
         }, 500);
     } catch (err) {
         alert("Generation Error: " + err.message);
@@ -418,7 +435,7 @@ function setChatChannel(chan) {
     const parentsBtn = document.getElementById('btn-chan-parents');
 
     if (staffBtn) staffBtn.classList.toggle('active', chan === 'staff');
-    if (parentsBtn) parentsBtn.classList.toggle('active', chan === 'parents');
+    if (parentsBtn) parentsBtn.classList.toggle('active', chan === 'parent-community');
 
     // Update Premium UI Header
     const title = document.getElementById('current-chat-title');
@@ -778,3 +795,96 @@ async function pushToParent() {
         else alert("Push failed: " + data.error);
     } catch (e) { alert("Error: " + e.message); }
 }
+
+// ── SAVED SOW LIBRARY SYSTEM ──
+let lastGeneratedSow = null;
+let savedSowsCache = [];
+
+async function loadSavedSowDropdown() {
+    try {
+        const res = await fetch('/api/sow', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) return;
+        const sows = await res.json();
+        savedSowsCache = sows;
+
+        const select = document.getElementById('saved-sow-select');
+        const group = document.getElementById('saved-sow-selector-group');
+        
+        if (select && group) {
+            if (sows.length === 0) {
+                group.style.display = 'none';
+                return;
+            }
+            group.style.display = 'block';
+            select.innerHTML = `<option value="">-- Choose a Saved SOW to pre-fill --</option>` + 
+                sows.map(s => `<option value="${s._id}">${s.title || `${s.subject} (${s.grade} - Term ${s.term})`}</option>`).join('');
+        }
+    } catch (e) { console.error("Error loading saved sows", e); }
+}
+
+function loadSavedSowFields() {
+    const select = document.getElementById('saved-sow-select');
+    if (!select || !select.value) return;
+
+    const selectedSow = savedSowsCache.find(s => s._id === select.value);
+    if (!selectedSow) return;
+
+    const gradeSelect = document.getElementById('gradeSelect-lp');
+    const termSelect = document.getElementById('termSelect-lp');
+    const subjectInput = document.getElementById('lp-subject');
+    const strandInput = document.getElementById('lp-strand');
+
+    if (gradeSelect) {
+        gradeSelect.value = selectedSow.grade;
+        updateTerms('lp');
+    }
+    if (termSelect) {
+        termSelect.value = selectedSow.term;
+    }
+    if (subjectInput) {
+        subjectInput.value = selectedSow.subject;
+    }
+    if (strandInput) {
+        strandInput.value = selectedSow.strands || '';
+    }
+    
+    alert(`📂 Pre-populated fields from "${selectedSow.title || 'Scheme of Work'}"! You can now refine the sub-strand/outcomes and hit Generate.`);
+}
+
+async function saveSOWToLibrary() {
+    if (!lastGeneratedSow) return alert("No generated Scheme of Work found to save.");
+    
+    const defaultTitle = `${lastGeneratedSow.grade} ${lastGeneratedSow.subject} - Term ${lastGeneratedSow.term}`;
+    const title = prompt("Enter a custom title for this Scheme of Work to save in library:", defaultTitle);
+    if (title === null) return;
+    if (!title.trim()) return alert("A valid title is required.");
+
+    try {
+        const body = {
+            title: title.trim(),
+            grade: lastGeneratedSow.grade,
+            term: lastGeneratedSow.term,
+            subject: lastGeneratedSow.subject,
+            strands: lastGeneratedSow.strands,
+            html: lastGeneratedSow.html
+        };
+
+        const res = await fetch('/api/sow', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        alert(`🎉 Successfully saved "${body.title}" to your SOW Library!`);
+        
+        const saveBtn = document.getElementById('btn-save-sow-lib');
+        if (saveBtn) saveBtn.style.display = 'none';
+
+        loadSavedSowDropdown();
+    } catch (e) {
+        alert("Failed to save Scheme of Work: " + e.message);
+    }
+}
+

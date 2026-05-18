@@ -68,7 +68,7 @@ class MockModel {
 }
 
 // ── MONGOOSE MODELS ──
-let User, Portfolio, ChatMessage, WeeklyPlan;
+let User, Portfolio, ChatMessage, WeeklyPlan, SavedSOW;
 
 if (USE_MONGO) {
     const userSchema = new mongoose.Schema({
@@ -86,16 +86,22 @@ if (USE_MONGO) {
         timestamp: { type: Number, default: Date.now }
     });
     const planSchema = new mongoose.Schema({ userEmail: { type: String, unique: true }, data: Object });
+    const sowSchema = new mongoose.Schema({
+        userEmail: String, title: String, grade: String, subject: String, term: String, strands: String,
+        html: String, timestamp: { type: Number, default: Date.now }
+    });
 
     User = mongoose.model('User', userSchema);
     Portfolio = mongoose.model('Portfolio', portfolioSchema);
     ChatMessage = mongoose.model('ChatMessage', chatSchema);
     WeeklyPlan = mongoose.model('WeeklyPlan', planSchema);
+    SavedSOW = mongoose.model('SavedSOW', sowSchema);
 } else {
     User = class extends MockModel { constructor(d) { super(d, 'users'); } static get _collectionName() { return 'users'; } };
     Portfolio = class extends MockModel { constructor(d) { super(d, 'portfolios'); } static get _collectionName() { return 'portfolios'; } };
     ChatMessage = class extends MockModel { constructor(d) { super(d, 'messages'); } static get _collectionName() { return 'messages'; } };
     WeeklyPlan = class extends MockModel { constructor(d) { super(d, 'plans'); } static get _collectionName() { return 'plans'; } };
+    SavedSOW = class extends MockModel { constructor(d) { super(d, 'sows'); } static get _collectionName() { return 'sows'; } };
 }
 
 const connectDB = async () => {
@@ -109,8 +115,8 @@ const connectDB = async () => {
         }
     } else {
         console.warn('⚠️  MONGODB DISCONNECTED: Using Local JSON Database (local_db.json)');
-        if (!fs.existsSync(DB_PATH)) writeDB({ users: [], portfolios: [], messages: [], plans: [] });
+        if (!fs.existsSync(DB_PATH)) writeDB({ users: [], portfolios: [], messages: [], plans: [], sows: [] });
     }
 };
 
-module.exports = { User, ChatMessage, Portfolio, WeeklyPlan, connectDB };
+module.exports = { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, connectDB };

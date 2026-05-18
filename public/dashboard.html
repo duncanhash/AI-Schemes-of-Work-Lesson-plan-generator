@@ -136,6 +136,13 @@
 
                     <!-- LESSON PLAN INPUTS FORM -->
                     <div id="plan-inputs-form" style="display:none;">
+                        <!-- Saved SOW Selector -->
+                        <div class="input-group" id="saved-sow-selector-group" style="margin-top:14px; display:none; margin-bottom:14px;">
+                            <label style="color:var(--accent2); font-weight:bold; display:block; margin-bottom:6px;">📂 Pre-populate from Saved SOW Library</label>
+                            <select id="saved-sow-select" onchange="loadSavedSowFields()" style="border: 2px dashed var(--accent2); background: rgba(124,107,255,0.05); padding: 10px; border-radius: 8px; font-weight:600; color:var(--text); cursor:pointer; outline:none; width:100%;">
+                                <!-- Dynamically populated -->
+                            </select>
+                        </div>
                         <div class="input-grid" style="margin-top:20px;">
                             <div class="input-group">
                                 <label>Grade Level</label>
@@ -354,7 +361,7 @@
                                     <p>General discussions...</p>
                                 </div>
                             </div>
-                            <div class="chat-channel-item" id="btn-chan-parents" onclick="setChatChannel('parents')">
+                            <div class="chat-channel-item" id="btn-chan-parents" onclick="setChatChannel('parent-community')">
                                 <div class="channel-avatar"
                                     style="background: linear-gradient(135deg, #00d4aa, #00a388);">👪</div>
                                 <div class="channel-info">
@@ -513,6 +520,7 @@
                 <p id="progress-label">Processing...</p>
             </div>
             <div class="download-bar" id="download-bar" style="display:none; margin-bottom:20px; text-align:center;">
+                <button class="btn-primary" id="btn-save-sow-lib" onclick="saveSOWToLibrary()" style="background:#00d4aa; color:#111; font-weight:700; margin-right:10px; display:none;">💾 Save SOW to Library</button>
                 <button class="btn-primary" onclick="pushToParent()" style="background:var(--accent2); color:white; margin-right:10px;">🚀 Push to Parent Dashboard</button>
                 <button class="btn-primary" onclick="downloadDocx()" style="background:#2b579a;">📥 Download
                     Word</button>

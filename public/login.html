@@ -133,7 +133,14 @@
             <img src="/logo.svg" alt="Pedagogy Logo">
             <div class="logo-text">PEDAGOGY</div>
         </div>
-        <h1 id="formTitle">Welcome Back</h1>
+
+        <!-- Beautiful Pill Switcher for distinct login portals -->
+        <div class="role-selector-pill" id="roleSelectorPill" style="display: flex; background: rgba(255,255,255,0.03); padding: 4px; border-radius: 12px; margin: 15px 0 25px 0; border: 1px solid rgba(255,255,255,0.05); gap: 4px;">
+            <button type="button" id="roleBtnTeacher" onclick="selectLoginRole('teacher')" style="flex: 1; padding: 10px; border-radius: 8px; border: none; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.3s; background: var(--accent); color: white;">👨‍🏫 Facilitator</button>
+            <button type="button" id="roleBtnParent" onclick="selectLoginRole('parent')" style="flex: 1; padding: 10px; border-radius: 8px; border: none; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.3s; background: transparent; color: #8080a0;">👪 Parent</button>
+        </div>
+
+        <h1 id="formTitle">Facilitator Portal</h1>
         <p>The Heart of Modern CBC.</p>
 
         <!-- Inline Error Message -->

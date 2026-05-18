@@ -45,16 +45,93 @@ if (togglePassword) {
     });
 }
 
+function selectLoginRole(role) {
+    const btnTeacher = document.getElementById('roleBtnTeacher');
+    const btnParent = document.getElementById('roleBtnParent');
+    const formTitle = document.getElementById('formTitle');
+    const emailInput = document.getElementById('email');
+    const nameInput = document.getElementById('name');
+    
+    // Set active radio in the background form
+    const radio = document.querySelector(`input[name="role"][value="${role}"]`);
+    if (radio) {
+        radio.checked = true;
+        // Trigger style update for registration radio buttons if visible
+        if (typeof updateRoleStyle === 'function') {
+            updateRoleStyle(radio);
+        }
+    }
+    
+    if (role === 'teacher') {
+        document.documentElement.style.setProperty('--accent', '#7c6bff');
+        document.documentElement.style.setProperty('--accent-glow', 'rgba(124, 107, 255, 0.3)');
+        
+        if (btnTeacher) {
+            btnTeacher.style.background = 'var(--accent)';
+            btnTeacher.style.color = 'white';
+        }
+        if (btnParent) {
+            btnParent.style.background = 'transparent';
+            btnParent.style.color = '#8080a0';
+        }
+        
+        if (formTitle) {
+            formTitle.textContent = isLoginMode ? 'Facilitator Portal' : 'Join Pedagogy';
+        }
+        if (emailInput) {
+            emailInput.placeholder = "mwalimu@school.com";
+        }
+        if (nameInput) {
+            nameInput.placeholder = "Mwalimu Juma";
+        }
+    } else {
+        document.documentElement.style.setProperty('--accent', '#00d4aa');
+        document.documentElement.style.setProperty('--accent-glow', 'rgba(0, 212, 170, 0.3)');
+        
+        if (btnParent) {
+            btnParent.style.background = 'var(--accent)';
+            btnParent.style.color = 'white';
+        }
+        if (btnTeacher) {
+            btnTeacher.style.background = 'transparent';
+            btnTeacher.style.color = '#8080a0';
+        }
+        
+        if (formTitle) {
+            formTitle.textContent = isLoginMode ? 'Parent Portal' : 'Join Pedagogy';
+        }
+        if (emailInput) {
+            emailInput.placeholder = "parent@email.com";
+        }
+        if (nameInput) {
+            nameInput.placeholder = "Mama/Baba Juma";
+        }
+    }
+}
+window.selectLoginRole = selectLoginRole;
+
 function switchMode() {
     isLoginMode = !isLoginMode;
     if (authError) authError.style.display = 'none'; // Clear errors when switching
-    formTitle.textContent = isLoginMode ? 'Welcome Back' : 'Join Pedagogy';
+    
+    const activeRole = document.querySelector('input[name="role"]:checked')?.value || 'teacher';
+    
     submitBtn.textContent = isLoginMode ? 'Log In' : 'Sign Up';
     switchBtn.textContent = isLoginMode ? "Don't have an account? Sign Up" : "Already have an account? Log In";
     document.getElementById('nameGroup').style.display = isLoginMode ? 'none' : 'block';
+    
+    // Hide portal selector switch during sign up (since role is chosen explicitly via radio buttons)
+    const portalSelector = document.getElementById('roleSelectorPill');
+    if (portalSelector) {
+        portalSelector.style.display = isLoginMode ? 'flex' : 'none';
+    }
+    
     // Update autocomplete for password field when signing up
     const passInput = document.getElementById('password');
     passInput.autocomplete = isLoginMode ? "current-password" : "new-password";
+
+    // Refresh titles & placeholders using the active role
+    selectLoginRole(activeRole);
 }
 
 loginForm.addEventListener('submit', async (e) => {
@@ -71,7 +148,7 @@ loginForm.addEventListener('submit', async (e) => {
 
     try {
         const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
-        const body = isLoginMode ? { email, password } : { email, password, name, role };
+        const body = isLoginMode ? { email, password, role } : { email, password, name, role };
 
         console.log(`Attempting ${isLoginMode ? 'Login' : 'Registration'} for:`, email);
 

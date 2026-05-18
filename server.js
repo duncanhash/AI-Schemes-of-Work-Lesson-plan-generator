@@ -10,7 +10,7 @@ const htmlToDocx = require('html-to-docx');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 require('dotenv').config();
-const { User, ChatMessage, Portfolio, WeeklyPlan, connectDB } = require('./db');
+const { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, connectDB } = require('./db');
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -41,6 +41,7 @@ app.get('/', (req, res) => {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -109,7 +110,7 @@ app.post('/api/auth/verify', async (req, res) => {
 });
 
 app.post('/api/auth/login', rateLimit, async (req, res) => {
-    let { email, password } = req.body;
+    let { email, password, role } = req.body;
     email = email.toLowerCase();
     try {
         const user = await User.findOne({ email });
@@ -117,6 +118,17 @@ app.post('/api/auth/login', rateLimit, async (req, res) => {
             console.warn(`[AUTH] Failed login attempt for: ${email}`);
             return res.status(400).json({ error: 'Invalid credentials' });
         }
+
+        // Distinct portal boundary validation
+        const userRole = user.role || 'teacher';
+        if (role && userRole !== role) {
+            const prettyRole = role === 'teacher' ? 'Facilitator' : 'Parent';
+            const otherRole = userRole === 'teacher' ? 'Facilitator' : 'Parent';
+            return res.status(400).json({ 
+                error: `This account is registered as a ${otherRole}. Please switch to the ${otherRole} Portal to log in.` 
+            });
+        }
+
         if (!user.isVerified) {
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
             user.otp = otp;
@@ -336,6 +348,13 @@ app.get('/api/storage/usage', authenticateToken, async (req, res) => {
 app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
     const channel = req.params.channel || 'staff';
     try {
+        // Secure staff channel: only teachers/facilitators can access
+        if (channel === 'staff') {
+            const user = await User.findOne({ email: req.user.email });
+            if (!user || (user.role || 'teacher') !== 'teacher') {
+                return res.status(403).json({ error: 'Access denied: Staff room is for facilitators only' });
+            }
+        }
         const messages = await ChatMessage.find({ channel }).sort({ timestamp: -1 }).limit(50);
         res.json(messages.reverse());
     } catch (err) { res.status(500).json({ error: 'Chat load error' }); }
@@ -345,10 +364,18 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
     const { text, channel } = req.body;
     if (!text) return res.status(400).json({ error: 'Message required' });
     try {
+        const chan = channel || 'staff';
+        // Secure staff channel: only teachers/facilitators can post
+        if (chan === 'staff') {
+            const user = await User.findOne({ email: req.user.email });
+            if (!user || (user.role || 'teacher') !== 'teacher') {
+                return res.status(403).json({ error: 'Access denied: Staff room is for facilitators only' });
+            }
+        }
         const newMessage = new ChatMessage({
             sender: req.user.email,
             text,
-            channel: channel || 'staff',
+            channel: chan,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         });
         await newMessage.save();
@@ -387,6 +414,42 @@ app.post('/api/share-portfolio', authenticateToken, async (req, res) => {
         }).catch(err => console.error("Email error:", err));
         res.json({ message: 'Portfolio shared with parent successfully!' });
     } catch (err) { res.status(500).json({ error: 'Failed to share: ' + err.message }); }
+});
+
+// ── Uptime Ping Endpoint ──
+app.get('/api/ping', (req, res) => {
+    res.json({ status: 'alive', timestamp: Date.now() });
+});
+
+// ── Saved SOW Library Endpoints ──
+app.post('/api/sow', authenticateToken, async (req, res) => {
+    const { title, grade, subject, term, strands, html } = req.body;
+    if (!title || !grade || !subject || !term || !strands || !html) {
+        return res.status(400).json({ error: 'All fields are required to save SOW' });
+    }
+    try {
+        const newSow = new SavedSOW({
+            userEmail: req.user.email,
+            title, grade, subject, term, strands, html
+        });
+        await newSow.save();
+        res.json(newSow);
+    } catch (err) { res.status(500).json({ error: 'Failed to save Scheme of Work' }); }
+});
+
+app.get('/api/sow', authenticateToken, async (req, res) => {
+    try {
+        const sows = await SavedSOW.find({ userEmail: req.user.email });
+        res.json(sows.reverse());
+    } catch (err) { res.status(500).json({ error: 'Failed to fetch saved Schemes of Work' }); }
+});
+
+app.delete('/api/sow/:id', authenticateToken, async (req, res) => {
+    try {
+        const deleted = await SavedSOW.findOneAndDelete({ _id: req.params.id, userEmail: req.user.email });
+        if (!deleted) return res.status(404).json({ error: 'Scheme of Work not found' });
+        res.json({ success: true, message: 'Scheme of Work deleted successfully' });
+    } catch (err) { res.status(500).json({ error: 'Failed to delete Scheme of Work' }); }
 });
 
 // ── Parent Dashboard Endpoints ──
@@ -435,9 +498,37 @@ app.get('/api/portfolio', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Failed to load portfolio' }); }
 });
 
+// Helper to save Base64 image to local uploads directory
+function saveBase64Image(base64Str) {
+    if (!base64Str || !base64Str.startsWith('data:image/')) return base64Str;
+    try {
+        const matches = base64Str.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) return base64Str;
+
+        const ext = matches[1].split('/')[1] || 'png';
+        const buffer = Buffer.from(matches[2], 'base64');
+        const filename = `img_${Date.now()}_${Math.floor(Math.random() * 1000)}.${ext}`;
+        const filePath = path.join(__dirname, 'uploads', filename);
+
+        // Ensure uploads directory exists
+        if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
+            fs.mkdirSync(path.join(__dirname, 'uploads'));
+        }
+
+        fs.writeFileSync(filePath, buffer);
+        return `/uploads/${filename}`;
+    } catch (e) {
+        console.error("Base64 save error:", e);
+        return base64Str;
+    }
+}
+
 app.post('/api/portfolio', authenticateToken, async (req, res) => {
     const { studentName, projectTitle, description, photos } = req.body;
     try {
+        // Save Base64 photos locally to save database storage quota space!
+        const savedPhotos = (photos || []).map(p => saveBase64Image(p));
+
         // Quota check
         const portfolios = await Portfolio.find({ userEmail: req.user.email });
         const planner = await WeeklyPlan.findOne({ userEmail: req.user.email });
@@ -451,7 +542,7 @@ app.post('/api/portfolio', authenticateToken, async (req, res) => {
             studentName,
             projectTitle,
             description,
-            photos
+            photos: savedPhotos
         });
         await newItem.save();
         res.json(newItem);
@@ -533,19 +624,20 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
 
         // ── SCHEME OF WORK ──
         if (documentType === 'sow') {
-            const prompt = `You are a strict KICD CBC specialist for Kenya. Generate a complete 12-week Scheme of Work (SOW) strictly aligned with the KICD curriculum for:
+            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
 Grade: ${grade} | Learning Area: ${subject} | Term: ${term} | Strands: ${strand}
 Facilitator: ${teacherName}
-${extraInstructions ? `Extra: ${extraInstructions}` : ''}${curriculumContext}
+${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
 
 Output ONE HTML <table> with these 10 columns:
 Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Questions | Core Competencies, Values & PCIs | Learning Resources | Assessment Method | Remarks
 
 Requirements:
 - 12 weeks, at least 2 lessons per week (24+ rows)
-- SLOs start with action verbs (identify, describe, demonstrate, compare)
+- All learning outcomes (SLOs), sub-strands, and content MUST be directly extracted from/aligned with official KICD syllabus expectations
+- SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies
 - Week 7 = Mid-Term Review; Week 12 = End-Term Assessment
-- Resources: KICD textbooks, charts, models, locally available materials
+- Resources: KICD-approved textbooks, charts, models, locally available materials
 - Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
@@ -555,12 +647,12 @@ Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
 
         // ── LESSON PLAN ──
         else if (documentType === 'plan') {
-            const prompt = `You are a strict KICD CBC expert in Kenya. Generate a complete Lesson Plan strictly aligned with KICD standards for:
+            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this Lesson Plan with the official KICD syllabus designs and guidelines for:
 Grade: ${grade} | Learning Area (Subject): ${subject} | Term: ${term}
 Strand: ${strand} | Sub-strand: ${subStrand || '________________'}
 Facilitator: ${teacherName} | School: ${schoolName}
 
-${learningOutcomes ? `SPECIFIC LEARNING OUTCOMES (Use these exact outcomes provided by the teacher): ${learningOutcomes}` : 'SPECIFIC LEARNING OUTCOMES: Generate 3-4 highly specific, KICD-compliant learning outcomes starting with action verbs (Bloom\'s taxonomy).'}
+${learningOutcomes ? `SPECIFIC LEARNING OUTCOMES (Use these exact outcomes provided by the teacher): ${learningOutcomes}` : 'SPECIFIC LEARNING OUTCOMES: Generate 3-4 highly specific learning outcomes directly extracted from the official KICD syllabus starting with action verbs (Bloom\'s taxonomy).'}
 ${competencies ? `CORE COMPETENCIES & VALUES (Use these exact competencies provided by the teacher): ${competencies}` : 'CORE COMPETENCIES & VALUES: Generate 4 relevant competencies and values to be developed (e.g., Critical Thinking, Collaboration, Respect).'}
 ${extendedActivity ? `EXTENDED ACTIVITY / HOMEWORK (Use this exact activity provided by the teacher): ${extendedActivity}` : 'EXTENDED ACTIVITY / HOMEWORK: Suggest 1-2 creative extended activities or homework ideas relevant to the lesson.'}
 ${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
@@ -571,24 +663,24 @@ Output HTML only with these clearly labelled sections using <h4 style="${H4}">:
 
 2. SPECIFIC LEARNING OUTCOMES — <ol> displaying the specific learning outcomes.
 
-3. KEY INQUIRY QUESTIONS — <ol> with 2-3 open-ended questions.
+3. KEY INQUIRY QUESTIONS — <ol> with 2-3 open-ended questions directly related to this KICD sub-strand.
 
 4. CORE COMPETENCIES & VALUES — <ul> displaying the core competencies and values.
 
 5. PCIs — <ul> (Pertinent & Contemporary Issues relevant to topic).
 
-6. LEARNING RESOURCES — <ul> (KICD textbooks, charts, locally available materials).
+6. LEARNING RESOURCES — <ul> (KICD-approved textbooks, charts, locally available materials).
 
 7. LESSON DEVELOPMENT — <table> columns: Phase | Facilitator Activity | Learner Activity | Time (mins)
    Rows: 
-   - Introduction (5 min) with AI suggested activities.
-   - Development—Core Activity (25 min) with AI suggested activities.
-   - Application/Practice (7 min) with AI suggested activities.
+   - Introduction (5 min) with KICD-compliant active learning activities.
+   - Development—Core Activity (25 min) with KICD-compliant active learning activities.
+   - Application/Practice (7 min) with KICD-compliant active learning activities.
    - Conclusion (3 min) — IMPORTANT: Both 'Facilitator Activity' and 'Learner Activity' cells MUST be left completely empty (just blank space or underscores) for the teacher to fill manually.
 
 8. EXTENDED ACTIVITY — <p> displaying the extended activity or homework.
 
-9. DIFFERENTIATED ACTIVITIES — <table> columns: Fast Learners | Slow Learners with AI suggestions.
+9. DIFFERENTIATED ACTIVITIES — <table> columns: Fast Learners | Slow Learners with KICD standard suggestions.
 
 10. FACILITATOR'S REFLECTION — <table> columns: What went well? | What needs improvement? | Follow-up action? — IMPORTANT: All cells in this table MUST be left completely empty (blank space or underscores) so the teacher can fill them in manually.
 
