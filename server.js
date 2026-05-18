@@ -421,7 +421,63 @@ app.get('/api/ping', (req, res) => {
     res.json({ status: 'alive', timestamp: Date.now() });
 });
 
-// ── Saved SOW Library Endpoints ──
+// ── Real‑time Chat with Socket.io ──
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require('socket.io');
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
+
+// Broadcast new messages to appropriate channel
+io.on('connection', socket => {
+  console.log('🛰️  New client connected');
+  socket.on('sendMessage', async ({ channel, text, sender }) => {
+    try {
+      const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
+      await newMsg.save();
+      io.emit(`chat:${channel}`, newMsg);
+    } catch (err) {
+      console.error('❌ Chat save error', err);
+    }
+  });
+});
+
+// ── Chat API ──
+// Fetch recent messages for a channel (limit 50)
+app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
+  const { channel } = req.params;
+  try {
+    const msgs = await ChatMessage.find({ channel })
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .lean();
+    res.json(msgs.reverse());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load chat' });
+  }
+});
+
+// Post a new message (fallback for non‑socket clients)
+app.post('/api/chat/:channel', authenticateToken, async (req, res) => {
+  const { channel } = req.params;
+  const { text } = req.body;
+  const sender = req.user.email;
+  try {
+    const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
+    await newMsg.save();
+    // Broadcast to sockets
+    io.emit(`chat:${channel}`, newMsg);
+    res.json(newMsg);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Start server with Socket.io
+server.listen(process.env.PORT || 3000, () => {
+  console.log('🚀 Server with Socket.io listening on port', process.env.PORT || 3000);
+});
 app.post('/api/sow', authenticateToken, async (req, res) => {
     const { title, grade, subject, term, strands, html } = req.body;
     if (!title || !grade || !subject || !term || !strands || !html) {
