@@ -69,7 +69,7 @@ function authenticateToken(req, res, next) {
 
 // ── Auth Endpoints ──
 app.post('/api/auth/register', rateLimit, async (req, res) => {
-    let { name, email, password, role } = req.body;
+    let { name, email, password, role, subject1, subject2 } = req.body;
     email = email.toLowerCase();
     try {
         const existingUser = await User.findOne({ email });
@@ -78,8 +78,17 @@ app.post('/api/auth/register', rateLimit, async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         console.log(`[AUTH] New Registration Attempt: ${email} (OTP: ${otp})`);
-        
-        const newUser = new User({ name, email, password: hashedPassword, otp, role: role || 'teacher' });
+
+        const newUser = new User({ 
+            name, 
+            email, 
+            password: hashedPassword, 
+            otp, 
+            role: role || 'teacher',
+            subject1: subject1 || '',
+            subject2: subject2 || '',
+            subjects: (subject1 && subject2) ? `${subject1}, ${subject2}` : (subject1 || subject2 || '')
+        });
         await newUser.save();
 
         transporter.sendMail({
@@ -88,7 +97,7 @@ app.post('/api/auth/register', rateLimit, async (req, res) => {
             subject: 'Verify your Pedagogy Account',
             text: `Your OTP is: ${otp}`
         }).catch(err => console.error("Email error:", err));
-        
+
         res.json({ message: 'OTP sent', debugOtp: otp });
     } catch (err) { res.status(500).json({ error: 'Registration error: ' + err.message }); }
 });
@@ -124,8 +133,8 @@ app.post('/api/auth/login', rateLimit, async (req, res) => {
         if (role && userRole !== role) {
             const prettyRole = role === 'teacher' ? 'Facilitator' : 'Parent';
             const otherRole = userRole === 'teacher' ? 'Facilitator' : 'Parent';
-            return res.status(400).json({ 
-                error: `This account is registered as a ${otherRole}. Please switch to the ${otherRole} Portal to log in.` 
+            return res.status(400).json({
+                error: `This account is registered as a ${otherRole}. Please switch to the ${otherRole} Portal to log in.`
             });
         }
 
@@ -133,7 +142,7 @@ app.post('/api/auth/login', rateLimit, async (req, res) => {
             const otp = Math.floor(100000 + Math.random() * 900000).toString();
             user.otp = otp;
             await user.save();
-            
+
             transporter.sendMail({
                 from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
                 to: email,
@@ -141,10 +150,10 @@ app.post('/api/auth/login', rateLimit, async (req, res) => {
                 text: `Your new OTP is: ${otp}`
             }).catch(err => console.error("Email error:", err));
 
-            return res.status(400).json({ 
-                error: 'Please verify email', 
-                needsVerify: true, 
-                debugOtp: otp 
+            return res.status(400).json({
+                error: 'Please verify email',
+                needsVerify: true,
+                debugOtp: otp
             });
         }
 
@@ -171,7 +180,7 @@ app.post('/api/auth/forgot', async (req, res) => {
             subject: 'Pedagogy Password Reset',
             text: `Your reset code is: ${otp}`
         }).catch(err => console.error("Email error:", err));
-        
+
         res.json({ message: 'Reset code sent', debugOtp: otp });
     } catch (err) { res.status(500).json({ error: 'Mail error' }); }
 });
@@ -194,10 +203,10 @@ app.post('/api/auth/reset', async (req, res) => {
 app.post('/api/suggest', authenticateToken, async (req, res) => {
     let { field, grade, subject, strand, term, extraInstructions } = req.body;
     const email = req.user.email.toLowerCase();
-    
+
     const user = await User.findOne({ email });
     const curriculumContext = user && user.curriculumText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Use strictly):\n${user.curriculumText}` : '';
-    
+
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompts = {
         subject: `Suggest a KICD-compliant learning area (subject) for ${grade} in Kenya strictly aligned with the KICD syllabus. Return only the name.`,
@@ -216,7 +225,7 @@ app.post('/api/suggest', authenticateToken, async (req, res) => {
         prompts.strands = `For ${grade} ${subject} Term ${term} strictly following the KICD CBC syllabus in Kenya, list ALL the main strands (learning areas) for this term. Return as a plain list, one per line. No extra text.`;
     }
     if (!prompts[field]) return res.status(400).json({ error: 'Unknown field' });
-    
+
     let finalPrompt = prompts[field];
     if (extraInstructions) {
         finalPrompt += `\n\nExtra Instructions: ${extraInstructions}`;
@@ -226,9 +235,9 @@ app.post('/api/suggest', authenticateToken, async (req, res) => {
     try {
         const result = await model.generateContent(finalPrompt);
         res.json({ suggestion: result.response.text().trim() });
-    } catch (err) { 
+    } catch (err) {
         console.error("Suggest error:", err.message);
-        res.status(500).json({ error: err.message }); 
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -237,19 +246,19 @@ app.post('/api/docx', authenticateToken, async (req, res) => {
     try {
         const { html } = req.body;
         let cleanHtml = html || '';
-        
+
         // 1. Remove markdown fences if any slipped through
         cleanHtml = cleanHtml.replace(/```[a-zA-Z]*\n?/g, '');
-        
+
         // 2. Remove script, style, comments, and xml instructions
         cleanHtml = cleanHtml.replace(/<(style|script|xml|meta|link)[^>]*>[\s\S]*?<\/\1>/gi, '');
         cleanHtml = cleanHtml.replace(/<!--[\s\S]*?-->/g, '');
         cleanHtml = cleanHtml.replace(/<\?[\s\S]*?\?>/g, '');
         cleanHtml = cleanHtml.replace(/<![\s\S]*?>/g, '');
-        
+
         // 3. Flatten namespaces in tags (e.g., <w:sdt> -> <sdt>)
         cleanHtml = cleanHtml.replace(/<\/?[a-zA-Z0-9-]+:([a-zA-Z0-9-]+)/g, (m, p1) => m.startsWith('</') ? `</${p1}` : `<${p1}`);
-        
+
         // 4. ULTIMATE ATTRIBUTE SANITIZER: Strip ALL attributes EXCEPT style, colspan, rowspan, width
         cleanHtml = cleanHtml.replace(/<([a-zA-Z0-9]+)([^>]*)>/g, (match, tag, attrs) => {
             let keep = '';
@@ -259,27 +268,27 @@ app.post('/api/docx', authenticateToken, async (req, res) => {
                 let safeStyle = mStyle[1].replace(/width\s*:\s*\d+%\s*;?/gi, '');
                 keep += ` style="${safeStyle}"`;
             }
-            
+
             let mCol = attrs.match(/colspan=["']([^"']*)["']/i);
             if (mCol) keep += ` colspan="${mCol[1]}"`;
 
             let mRow = attrs.match(/rowspan=["']([^"']*)["']/i);
             if (mRow) keep += ` rowspan="${mRow[1]}"`;
-            
+
             let mWidth = attrs.match(/width=["']([^"']*)["']/i);
             if (mWidth) keep += ` width="${mWidth[1]}"`;
 
             return `<${tag}${keep}>`;
         });
-        
+
         const buffer = await htmlToDocx(cleanHtml, null, {
             margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
         });
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.send(buffer);
-    } catch (err) { 
+    } catch (err) {
         console.error("DOCX Error:", err);
-        res.status(500).json({ error: 'DOCX failed: ' + err.message }); 
+        res.status(500).json({ error: 'DOCX failed: ' + err.message });
     }
 });
 
@@ -287,14 +296,34 @@ app.post('/api/docx', authenticateToken, async (req, res) => {
 app.get('/api/profile', authenticateToken, async (req, res) => {
     try {
         const user = await User.findOne({ email: req.user.email });
-        res.json({ name: user.profileTeacher || user.name, school: user.profileSchool || '' });
+        res.json({ 
+            name: user.profileTeacher || user.name, 
+            school: user.profileSchool || '', 
+            subjects: user.subjects || '',
+            subject1: user.subject1 || '',
+            subject2: user.subject2 || '',
+            role: user.role || 'teacher'
+        });
     } catch (err) { res.status(500).json({ error: 'Profile load error' }); }
 });
 
 app.post('/api/profile', authenticateToken, async (req, res) => {
-    const { name, school } = req.body;
+    const { name, school, subjects } = req.body;
     try {
-        await User.findOneAndUpdate({ email: req.user.email }, { profileTeacher: name, profileSchool: school });
+        const subList = (subjects || '').split(',').map(s => s.trim()).filter(s => s);
+        const subject1 = subList[0] || '';
+        const subject2 = subList[1] || '';
+        
+        await User.findOneAndUpdate(
+            { email: req.user.email }, 
+            { 
+                profileTeacher: name, 
+                profileSchool: school, 
+                subjects: (subject1 && subject2) ? `${subject1}, ${subject2}` : (subject1 || subject2 || ''),
+                subject1,
+                subject2
+            }
+        );
         res.json({ message: 'Profile updated' });
     } catch (err) { res.status(500).json({ error: 'Profile save error' }); }
 });
@@ -302,7 +331,7 @@ app.post('/api/profile', authenticateToken, async (req, res) => {
 app.post('/api/profile/curriculum', authenticateToken, upload.single('curriculum'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-        
+
         let text = '';
         if (req.file.mimetype === 'application/pdf') {
             const dataBuffer = fs.readFileSync(req.file.path);
@@ -311,12 +340,12 @@ app.post('/api/profile/curriculum', authenticateToken, upload.single('curriculum
         } else {
             text = fs.readFileSync(req.file.path, 'utf8');
         }
-        
+
         fs.unlinkSync(req.file.path);
-        
+
         const curriculumText = text.substring(0, 3000);
         await User.findOneAndUpdate({ email: req.user.email }, { curriculumText });
-        
+
         res.json({ message: 'Curriculum processed and saved' });
     } catch (err) {
         console.error("Curriculum upload error:", err);
@@ -331,11 +360,11 @@ app.get('/api/storage/usage', authenticateToken, async (req, res) => {
     try {
         const portfolios = await Portfolio.find({ userEmail: req.user.email });
         const planner = await WeeklyPlan.findOne({ userEmail: req.user.email });
-        
+
         // Estimate size in bytes
         let totalBytes = JSON.stringify(portfolios).length + (planner ? JSON.stringify(planner).length : 0);
         const usageMB = (totalBytes / (1024 * 1024)).toFixed(2);
-        
+
         res.json({
             usedMB: parseFloat(usageMB),
             totalMB: MAX_STORAGE_MB,
@@ -387,7 +416,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
 app.post('/api/share-portfolio', authenticateToken, async (req, res) => {
     const { parentEmail, studentName, projectTitle, portfolioHtml, recordId } = req.body;
     if (!parentEmail) return res.status(400).json({ error: 'Parent email required' });
-    
+
     try {
         // If we have a recordId, update the portfolio in DB to include the parentEmail
         if (recordId) {
@@ -426,57 +455,57 @@ const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
 const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
+    cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
 // Broadcast new messages to appropriate channel
 io.on('connection', socket => {
-  console.log('🛰️  New client connected');
-  socket.on('sendMessage', async ({ channel, text, sender }) => {
-    try {
-      const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
-      await newMsg.save();
-      io.emit(`chat:${channel}`, newMsg);
-    } catch (err) {
-      console.error('❌ Chat save error', err);
-    }
-  });
+    console.log('🛰️  New client connected');
+    socket.on('sendMessage', async ({ channel, text, sender }) => {
+        try {
+            const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
+            await newMsg.save();
+            io.emit(`chat:${channel}`, newMsg);
+        } catch (err) {
+            console.error('❌ Chat save error', err);
+        }
+    });
 });
 
 // ── Chat API ──
 // Fetch recent messages for a channel (limit 50)
 app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
-  const { channel } = req.params;
-  try {
-    const msgs = await ChatMessage.find({ channel })
-      .sort({ timestamp: -1 })
-      .limit(50)
-      .lean();
-    res.json(msgs.reverse());
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to load chat' });
-  }
+    const { channel } = req.params;
+    try {
+        const msgs = await ChatMessage.find({ channel })
+            .sort({ timestamp: -1 })
+            .limit(50)
+            .lean();
+        res.json(msgs.reverse());
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to load chat' });
+    }
 });
 
 // Post a new message (fallback for non‑socket clients)
 app.post('/api/chat/:channel', authenticateToken, async (req, res) => {
-  const { channel } = req.params;
-  const { text } = req.body;
-  const sender = req.user.email;
-  try {
-    const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
-    await newMsg.save();
-    // Broadcast to sockets
-    io.emit(`chat:${channel}`, newMsg);
-    res.json(newMsg);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to send message' });
-  }
+    const { channel } = req.params;
+    const { text } = req.body;
+    const sender = req.user.email;
+    try {
+        const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
+        await newMsg.save();
+        // Broadcast to sockets
+        io.emit(`chat:${channel}`, newMsg);
+        res.json(newMsg);
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to send message' });
+    }
 });
 
 // Start server with Socket.io
 server.listen(process.env.PORT || 3000, () => {
-  console.log('🚀 Server with Socket.io listening on port', process.env.PORT || 3000);
+    console.log('🚀 Server with Socket.io listening on port', process.env.PORT || 3000);
 });
 app.post('/api/sow', authenticateToken, async (req, res) => {
     const { title, grade, subject, term, strands, html } = req.body;
@@ -532,7 +561,7 @@ app.post('/api/parent/push-record', authenticateToken, async (req, res) => {
             timestamp: Date.now()
         });
         await newRecord.save();
-        
+
         // Optional: Send email notification too
         transporter.sendMail({
             from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
@@ -665,14 +694,14 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
         // ── BLANK TEMPLATE ──
         if (isTemplate) {
             const hdrs = {
-                sow:  ['Week','Lesson','Strand','Sub-strand','Specific Learning Outcomes','Key Inquiry Questions','Core Competencies','Learning Resources','Assessment Method','Remarks'],
-                plan: ['Phase','Facilitator Activity','Learner Activity','Time (mins)','Resources'],
-                rubric: ['Assessment Criteria','Exceeding (EE)','Meeting (ME)','Approaching (AE)','Below (BE)'],
-                checklist: ['No.','Learner Name','Learning Outcome','Observation','L','P','B','Date','Remarks']
+                sow: ['Week', 'Lesson', 'Strand', 'Sub-strand', 'Specific Learning Outcomes', 'Key Inquiry Questions', 'Core Competencies', 'Learning Resources', 'Assessment Method', 'Remarks'],
+                plan: ['Phase', 'Facilitator Activity', 'Learner Activity', 'Time (mins)', 'Resources'],
+                rubric: ['Assessment Criteria', 'Exceeding (EE)', 'Meeting (ME)', 'Approaching (AE)', 'Below (BE)'],
+                checklist: ['No.', 'Learner Name', 'Learning Outcome', 'Observation', 'L', 'P', 'B', 'Date', 'Remarks']
             };
-            const cols = hdrs[documentType] || ['Column 1','Column 2','Column 3'];
-            const rows = Array(12).fill(0).map(()=>`<tr>${cols.map(()=>`<td style="${TD}height:32px;"></td>`).join('')}</tr>`).join('');
-            const tbl = `<table style="${TS}"><thead><tr>${cols.map(c=>`<th style="${TH}">${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+            const cols = hdrs[documentType] || ['Column 1', 'Column 2', 'Column 3'];
+            const rows = Array(12).fill(0).map(() => `<tr>${cols.map(() => `<td style="${TD}height:32px;"></td>`).join('')}</tr>`).join('');
+            const tbl = `<table style="${TS}"><thead><tr>${cols.map(c => `<th style="${TH}">${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
             return res.json({ html: `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;">${documentType.toUpperCase()} — BLANK TEMPLATE</h3>${tbl}${sigBlock}`, markdown: 'Template' });
         }
 
@@ -697,18 +726,41 @@ Requirements:
 - Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">SCHEME OF WORK — ${subject} | ${grade} | Term ${term}</h3>${raw}${sigBlock}`;
         }
 
         // ── LESSON PLAN ──
         else if (documentType === 'plan') {
-            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this Lesson Plan with the official KICD syllabus designs and guidelines for:
-Grade: ${grade} | Learning Area (Subject): ${subject} | Term: ${term}
-Strand: ${strand} | Sub-strand: ${subStrand || '________________'}
+            const { sowId, lessonNumber } = req.body;
+            let sowContext = '';
+            let targetGrade = grade;
+            let targetTerm = term;
+            let targetSubject = subject;
+            let targetStrand = strand;
+            let targetSubStrand = subStrand;
+
+            if (sowId) {
+                const sowObj = await SavedSOW.findOne({ _id: sowId, userEmail: req.user.email });
+                if (sowObj) {
+                    targetGrade = sowObj.grade;
+                    targetTerm = sowObj.term;
+                    targetSubject = sowObj.subject;
+                    targetStrand = sowObj.strands;
+                    sowContext = `
+SCHEME OF WORK REFERENCE (Strictly extract details for Lesson Number ${lessonNumber} from this Scheme of Work table):
+${sowObj.html}
+`;
+                }
+            }
+
+            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract details for Lesson Number ${lessonNumber} and strictly align this Lesson Plan with the official KICD syllabus designs and guidelines for:
+Grade: ${targetGrade} | Learning Area (Subject): ${targetSubject} | Term: ${targetTerm}
+Strand: ${targetStrand}
+${sowContext ? `SOW Context: ${sowContext}` : `Sub-strand: ${targetSubStrand || '________________'}`}
 Facilitator: ${teacherName} | School: ${schoolName}
 
-${learningOutcomes ? `SPECIFIC LEARNING OUTCOMES (Use these exact outcomes provided by the teacher): ${learningOutcomes}` : 'SPECIFIC LEARNING OUTCOMES: Generate 3-4 highly specific learning outcomes directly extracted from the official KICD syllabus starting with action verbs (Bloom\'s taxonomy).'}
+${learningOutcomes ? `SPECIFIC LEARNING OUTCOMES (Use these exact outcomes provided by the teacher): ${learningOutcomes}` : 'SPECIFIC LEARNING OUTCOMES: Generate 3-4 highly specific learning outcomes directly extracted from the official KICD syllabus or SOW row context starting with action verbs (Bloom\'s taxonomy).'}
 ${competencies ? `CORE COMPETENCIES & VALUES (Use these exact competencies provided by the teacher): ${competencies}` : 'CORE COMPETENCIES & VALUES: Generate 4 relevant competencies and values to be developed (e.g., Critical Thinking, Collaboration, Respect).'}
 ${extendedActivity ? `EXTENDED ACTIVITY / HOMEWORK (Use this exact activity provided by the teacher): ${extendedActivity}` : 'EXTENDED ACTIVITY / HOMEWORK: Suggest 1-2 creative extended activities or homework ideas relevant to the lesson.'}
 ${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
@@ -742,8 +794,61 @@ Output HTML only with these clearly labelled sections using <h4 style="${H4}">:
 
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
-            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">LESSON PLAN — ${subject} | ${grade} | Term ${term}</h3>${raw}${sigBlock}`;
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">LESSON PLAN — ${targetSubject} | ${targetGrade} | Term ${targetTerm}</h3>${raw}${sigBlock}`;
+        }
+
+        // ── TEACHER'S GUIDE NOTES ──
+        else if (documentType === 'notes') {
+            const { sowId, lessonNumber } = req.body;
+            let sowContext = '';
+            let targetGrade = grade;
+            let targetTerm = term;
+            let targetSubject = subject;
+            let targetStrand = strand;
+
+            if (sowId) {
+                const sowObj = await SavedSOW.findOne({ _id: sowId, userEmail: req.user.email });
+                if (sowObj) {
+                    targetGrade = sowObj.grade;
+                    targetTerm = sowObj.term;
+                    targetSubject = sowObj.subject;
+                    targetStrand = sowObj.strands;
+                    sowContext = `
+SCHEME OF WORK REFERENCE (Strictly extract details for Lesson Number ${lessonNumber} from this Scheme of Work table):
+${sowObj.html}
+`;
+                }
+            }
+
+            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert and facilitator. Write detailed, step-by-step Teacher's Guide / Instructional Guidance Notes for delivering Lesson Number ${lessonNumber} from the following Scheme of Work context:
+Grade: ${targetGrade} | Subject: ${targetSubject} | Term: ${targetTerm}
+Strand: ${targetStrand}
+${sowContext ? `SOW Context: ${sowContext}` : ''}
+Facilitator: ${teacherName} | School: ${schoolName}
+
+${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
+
+Requirements:
+1. Deliver a comprehensive guide (Teacher's Guide Notes) containing:
+   - Lesson Theme & Specific Learning Outcomes to focus on.
+   - Step-by-Step Lesson Flow (Detailed facilitation guidance for Introduction, Core activity, and Conclusion phases).
+   - Pedagogical cues & teaching methods (e.g., experiential learning, inquiry, group discussions).
+   - Anticipated learner misconceptions/difficulties and how to handle them.
+   - Assessment tips (formative assessment cues to monitor learning).
+   - Inclusion & Differentiated support guidelines for diverse learners.
+
+Output HTML only with these clearly labelled sections using <h4 style="${H4}">:
+- LESSON DETAILS & OUTCOMES
+- STEP-BY-STEP FACILITATION INSTRUCTIONS
+- PEDAGOGICAL CUES & CLASSROOM MANAGEMENT
+- MISCONCEPTIONS & CORRECTION STRATEGIES
+- FORMATIVE ASSESSMENT CUES & REMARKS
+
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            const r = await model.generateContent(prompt);
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
+            html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">TEACHER'S GUIDE NOTES — Lesson ${lessonNumber} | ${targetSubject}</h3>${raw}${sigBlock}`;
         }
 
         // ── RUBRIC ──
@@ -758,7 +863,7 @@ Output ONE HTML <table> columns: Assessment Criteria | Exceeding (EE) | Meeting 
 After table: <p><strong>Key:</strong> EE=4 | ME=3 | AE=2 | BE=1</p>
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">ASSESSMENT RUBRIC — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
         }
 
@@ -774,7 +879,7 @@ Output:
 3. Small summary <table>: Total Learners | Achieved Outcome | Need Support | Facilitator Action
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">OBSERVATION CHECKLIST — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
         }
 
@@ -799,8 +904,8 @@ Output HTML sections using <h4 style="${H4}"> headings:
 9. FACILITATOR'S REFLECTION — blank <table>: What worked | Improvements | Next steps
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
-            const hdr = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">PROJECT GUIDE: ${(projectTitle||'').toUpperCase()}</h3>`;
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
+            const hdr = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">PROJECT GUIDE: ${(projectTitle || '').toUpperCase()}</h3>`;
             return res.json({ html: `${hdr}${raw}${sigBlock}`, markdown: raw });
         }
 
@@ -817,7 +922,7 @@ Output HTML sections (<h4 style="${H4}">):
 5. SCORE SUMMARY — <table>: Total Criteria | Achieved | Score /[max]
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">PEER ASSESSMENT GUIDE — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
         }
 
@@ -834,7 +939,7 @@ Output HTML sections (<h4 style="${H4}">):
 4. RATING SCALE — <p>: 1=No response | 2=Partial | 3=Adequate | 4=Excellent
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">ORAL QUESTIONING FRAMEWORK — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
         }
 
@@ -851,7 +956,7 @@ Use learner-friendly language. Output HTML sections (<h4 style="${H4}">):
 5. FACILITATOR'S FEEDBACK — blank lined <table> for written feedback + signature line
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
-            const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();
+            const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">SELF-ASSESSMENT JOURNAL — ${subject} | ${grade}</h3>${raw}${sigBlock}`;
         }
 
@@ -879,5 +984,4 @@ ${sigBlock}`;
     }
 });
 
-app.listen(port, () => console.log(`Server running on http://localhost:${port}`));
 

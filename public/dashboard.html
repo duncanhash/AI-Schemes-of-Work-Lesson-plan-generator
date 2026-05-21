@@ -52,6 +52,30 @@
                     Pedagogy...</h1>
             </div>
 
+            <!-- Dual Subject Workspace Selector -->
+            <div id="subject-workspace-selector" class="subject-workspace-container" style="display: none;">
+                <div class="workspace-cards-wrapper">
+                    <!-- Subject 1 Side -->
+                    <div id="workspace-subject1" class="workspace-card active" onclick="selectWorkspaceSubject(1)">
+                        <div class="workspace-icon">📚</div>
+                        <div class="workspace-info">
+                            <span class="workspace-tag">Workspace Side A</span>
+                            <h3 id="workspace-subject1-title" class="workspace-title">Subject 1</h3>
+                            <p class="workspace-status">🟢 Active Workspace</p>
+                        </div>
+                    </div>
+                    <!-- Subject 2 Side -->
+                    <div id="workspace-subject2" class="workspace-card" onclick="selectWorkspaceSubject(2)">
+                        <div class="workspace-icon">🔬</div>
+                        <div class="workspace-info">
+                            <span class="workspace-tag">Workspace Side B</span>
+                            <h3 id="workspace-subject2-title" class="workspace-title">Subject 2</h3>
+                            <p class="workspace-status">Click to activate</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ── SOW & LESSON PLANS ── -->
             <section id="view-sow" class="view-section active">
                 <div class="hero">
@@ -143,95 +167,108 @@
                                 <!-- Dynamically populated -->
                             </select>
                         </div>
-                        <div class="input-grid" style="margin-top:20px;">
-                            <div class="input-group">
-                                <label>Grade Level</label>
-                                <select id="gradeSelect-lp" onchange="updateTerms('lp')">
-                                    <optgroup label="Pre-Primary">
-                                        <option value="PP1">PP1</option>
-                                        <option value="PP2">PP2</option>
-                                    </optgroup>
-                                    <optgroup label="Lower Primary">
-                                        <option value="Grade 1">Grade 1</option>
-                                        <option value="Grade 2">Grade 2</option>
-                                        <option value="Grade 3">Grade 3</option>
-                                    </optgroup>
-                                    <optgroup label="Upper Primary">
-                                        <option value="Grade 4">Grade 4</option>
-                                        <option value="Grade 5">Grade 5</option>
-                                        <option value="Grade 6">Grade 6</option>
-                                    </optgroup>
-                                    <optgroup label="Junior School (JSS)">
-                                        <option value="Grade 7">Grade 7</option>
-                                        <option value="Grade 8" selected>Grade 8</option>
-                                        <option value="Grade 9">Grade 9</option>
-                                    </optgroup>
-                                    <optgroup label="Senior School (SSS)">
-                                        <option value="Grade 10">Grade 10</option>
-                                        <option value="Grade 11">Grade 11</option>
-                                        <option value="Grade 12">Grade 12</option>
-                                    </optgroup>
-                                </select>
-                            </div>
-                            <div class="input-group">
-                                <label id="termLabel-lp">Term</label>
-                                <select id="termSelect-lp">
-                                    <option value="1">Term 1</option>
-                                    <option value="2">Term 2</option>
-                                    <option value="3">Term 3</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="input-grid" style="margin-top:14px;">
-                            <div class="input-group">
-                                <label>Subject / Learning Area (Required)</label>
-                                <input type="text" id="lp-subject" value="Integrated Science" required>
-                            </div>
-                            <div class="input-group">
-                                <label>Strand (Required)</label>
-                                <input type="text" id="lp-strand" value="Human Body Systems" required>
-                            </div>
-                        </div>
-                        <div class="input-group" style="margin-top:14px;">
-                            <label>Sub-strand (Required)</label>
-                            <input type="text" id="lp-substrand" value="Excretory System" required>
-                        </div>
                         
-                        <!-- Outcomes (Optional/AI) -->
-                        <div class="input-group" style="margin-top:14px;">
-                            <label>Specific Learning Outcomes (Leave blank for AI, or enter manually)</label>
-                            <div class="suggest-row">
-                                <textarea id="lp-outcomes-input" placeholder="Enter outcomes or suggest via KICD..." rows="2"></textarea>
-                                <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-outcomes-input', 'lp-outcomes', 'lp')">✨ Suggest</button>
-                            </div>
-                            <div class="suggest-bubble" id="bubble-lp-outcomes-input"></div>
+                        <!-- Lesson Number Input (Shown when SOW is selected) -->
+                        <div class="input-group" id="lp-lesson-number-group" style="display:none; margin-top:14px; margin-bottom:14px;">
+                            <label style="color:var(--accent); font-weight:bold; display:block; margin-bottom:6px;">🔢 Lesson Number from SOW</label>
+                            <input type="number" id="lp-lesson-number" placeholder="e.g. 5" min="1" value="1" style="border: 2px solid var(--accent); background: rgba(124,107,255,0.02);">
                         </div>
 
-                        <!-- Competencies (Optional/AI) -->
-                        <div class="input-group" style="margin-top:14px;">
-                            <label>Core Competencies &amp; Values (Leave blank for AI, or enter manually)</label>
-                            <div class="suggest-row">
-                                <textarea id="lp-competencies-input" placeholder="Enter competencies/values or suggest via KICD..." rows="2"></textarea>
-                                <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-competencies-input', 'lp-competencies', 'lp')">✨ Suggest</button>
+                        <!-- Standard fields to hide when using saved SOW -->
+                        <div id="lp-standard-fields">
+                            <div class="input-grid" style="margin-top:20px;">
+                                <div class="input-group">
+                                    <label>Grade Level</label>
+                                    <select id="gradeSelect-lp" onchange="updateTerms('lp')">
+                                        <optgroup label="Pre-Primary">
+                                            <option value="PP1">PP1</option>
+                                            <option value="PP2">PP2</option>
+                                        </optgroup>
+                                        <optgroup label="Lower Primary">
+                                            <option value="Grade 1">Grade 1</option>
+                                            <option value="Grade 2">Grade 2</option>
+                                            <option value="Grade 3">Grade 3</option>
+                                        </optgroup>
+                                        <optgroup label="Upper Primary">
+                                            <option value="Grade 4">Grade 4</option>
+                                            <option value="Grade 5">Grade 5</option>
+                                            <option value="Grade 6">Grade 6</option>
+                                        </optgroup>
+                                        <optgroup label="Junior School (JSS)">
+                                            <option value="Grade 7">Grade 7</option>
+                                            <option value="Grade 8" selected>Grade 8</option>
+                                            <option value="Grade 9">Grade 9</option>
+                                        </optgroup>
+                                        <optgroup label="Senior School (SSS)">
+                                            <option value="Grade 10">Grade 10</option>
+                                            <option value="Grade 11">Grade 11</option>
+                                            <option value="Grade 12">Grade 12</option>
+                                        </optgroup>
+                                    </select>
+                                </div>
+                                <div class="input-group">
+                                    <label id="termLabel-lp">Term</label>
+                                    <select id="termSelect-lp">
+                                        <option value="1">Term 1</option>
+                                        <option value="2">Term 2</option>
+                                        <option value="3">Term 3</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="suggest-bubble" id="bubble-lp-competencies-input"></div>
-                        </div>
+                            <div class="input-grid" style="margin-top:14px;">
+                                <div class="input-group">
+                                    <label>Subject / Learning Area (Required)</label>
+                                    <input type="text" id="lp-subject" value="Integrated Science" required>
+                                </div>
+                                <div class="input-group">
+                                    <label>Strand (Required)</label>
+                                    <input type="text" id="lp-strand" value="Human Body Systems" required>
+                                </div>
+                            </div>
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Sub-strand (Required)</label>
+                                <input type="text" id="lp-substrand" value="Excretory System" required>
+                            </div>
+                            
+                            <!-- Outcomes (Optional/AI) -->
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Specific Learning Outcomes (Leave blank for AI, or enter manually)</label>
+                                <div class="suggest-row">
+                                    <textarea id="lp-outcomes-input" placeholder="Enter outcomes or suggest via KICD..." rows="2"></textarea>
+                                    <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-outcomes-input', 'lp-outcomes', 'lp')">✨ Suggest</button>
+                                </div>
+                                <div class="suggest-bubble" id="bubble-lp-outcomes-input"></div>
+                            </div>
 
-                        <!-- Extended Activity (Optional/AI) -->
-                        <div class="input-group" style="margin-top:14px;">
-                            <label>Extended Activity / Homework (Leave blank for AI, or enter manually)</label>
-                            <div class="suggest-row">
-                                <textarea id="lp-extended-input" placeholder="Enter homework idea or suggest via KICD..." rows="2"></textarea>
-                                <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-extended-input', 'lp-extended', 'lp')">✨ Suggest</button>
+                            <!-- Competencies (Optional/AI) -->
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Core Competencies &amp; Values (Leave blank for AI, or enter manually)</label>
+                                <div class="suggest-row">
+                                    <textarea id="lp-competencies-input" placeholder="Enter competencies/values or suggest via KICD..." rows="2"></textarea>
+                                    <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-competencies-input', 'lp-competencies', 'lp')">✨ Suggest</button>
+                                </div>
+                                <div class="suggest-bubble" id="bubble-lp-competencies-input"></div>
                             </div>
-                            <div class="suggest-bubble" id="bubble-lp-extended-input"></div>
+
+                            <!-- Extended Activity (Optional/AI) -->
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Extended Activity / Homework (Leave blank for AI, or enter manually)</label>
+                                <div class="suggest-row">
+                                    <textarea id="lp-extended-input" placeholder="Enter homework idea or suggest via KICD..." rows="2"></textarea>
+                                    <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-extended-input', 'lp-extended', 'lp')">✨ Suggest</button>
+                                </div>
+                                <div class="suggest-bubble" id="bubble-lp-extended-input"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="card" id="sow-extra-card">
                     <textarea id="extra-sow" rows="2" placeholder="Extra instructions for AI..."></textarea>
-                    <button class="btn-generate" onclick="generateDocument()">⚡ Generate</button>
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn-generate" id="btn-generate-doc" onclick="generateDocument()" style="flex: 1;">⚡ Generate</button>
+                        <button class="btn-generate" id="btn-generate-guide" onclick="generateTeacherGuideNotes()" style="flex: 1; background: linear-gradient(135deg, var(--accent2), #00a388); display: none;">📘 Generate Teacher's Guide</button>
+                    </div>
                 </div>
                 <div class="card" id="sow-template-card" style="display:none;">
                     <button class="btn-generate" onclick="downloadTemplate()">📋 Download Blank Template</button>

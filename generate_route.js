@@ -90,6 +90,9 @@ Output HTML only with these clearly labelled sections using <h4 style="${H4}">:
 8. DIFFERENTIATED ACTIVITIES — <table>: Fast Learners | Slow Learners
 
 9. FACILITATOR'S REFLECTION — <table>: What went well? | What needs improvement? | Follow-up action?
+
+10. TEACHER GUIDANCE NOTES — <ul><li>Key points to emphasize during delivery</li><li>Potential misconceptions and how to address them</li><li>Suggested assessment focus and probing questions</li></ul>
+
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
             const raw = r.response.text().replace(/^```[a-z]*\n?/i,'').replace(/```$/i,'').trim();

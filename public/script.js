@@ -66,6 +66,9 @@ async function populateProfileFields() {
         // Populate subjects
         const pSubjects = document.getElementById('profile-subjects');
         if (pSubjects) pSubjects.value = profile.subjects || '';
+
+        // Initialize Dual Workspace
+        initWorkspaceSelector(profile);
     } catch (e) { console.error("Profile load error:", e); }
 }
 
@@ -192,12 +195,34 @@ function applyStrandsSelection() {
 }
 
 function toggleGenType(type) {
+    const select = document.getElementById('saved-sow-select');
+    const hasSow = select && select.value;
+
     if (type === 'sow') {
         document.getElementById('sow-inputs-form').style.display = 'block';
         document.getElementById('plan-inputs-form').style.display = 'none';
+        
+        const guideBtn = document.getElementById('btn-generate-guide');
+        const lessonNumGroup = document.getElementById('lp-lesson-number-group');
+        if (guideBtn) guideBtn.style.display = 'none';
+        if (lessonNumGroup) lessonNumGroup.style.display = 'none';
     } else {
         document.getElementById('sow-inputs-form').style.display = 'none';
         document.getElementById('plan-inputs-form').style.display = 'block';
+        
+        const guideBtn = document.getElementById('btn-generate-guide');
+        const lessonNumGroup = document.getElementById('lp-lesson-number-group');
+        const standardFields = document.getElementById('lp-standard-fields');
+
+        if (hasSow) {
+            if (guideBtn) guideBtn.style.display = 'block';
+            if (lessonNumGroup) lessonNumGroup.style.display = 'block';
+            if (standardFields) standardFields.style.display = 'none';
+        } else {
+            if (guideBtn) guideBtn.style.display = 'none';
+            if (lessonNumGroup) lessonNumGroup.style.display = 'none';
+            if (standardFields) standardFields.style.display = 'block';
+        }
     }
 }
 
@@ -269,18 +294,26 @@ async function generateDocument(isTemplate = false) {
             payload.strand = document.getElementById('sow-strand').value;
             payload.extraInstructions = document.getElementById('extra-sow').value;
         } else {
-            payload.grade = document.getElementById('gradeSelect-lp').value;
-            payload.term = document.getElementById('termSelect-lp').value;
-            payload.subject = document.getElementById('lp-subject').value;
-            payload.strand = document.getElementById('lp-strand').value;
-            payload.subStrand = document.getElementById('lp-substrand').value;
-            payload.learningOutcomes = document.getElementById('lp-outcomes-input').value;
-            payload.competencies = document.getElementById('lp-competencies-input').value;
-            payload.extendedActivity = document.getElementById('lp-extended-input').value;
+            const select = document.getElementById('saved-sow-select');
+            if (select && select.value) {
+                payload.sowId = select.value;
+                payload.lessonNumber = parseInt(document.getElementById('lp-lesson-number').value) || 1;
+                payload.subject = document.getElementById('lp-subject').value;
+                payload.strand = document.getElementById('lp-strand').value;
+            } else {
+                payload.grade = document.getElementById('gradeSelect-lp').value;
+                payload.term = document.getElementById('termSelect-lp').value;
+                payload.subject = document.getElementById('lp-subject').value;
+                payload.strand = document.getElementById('lp-strand').value;
+                payload.subStrand = document.getElementById('lp-substrand').value;
+                payload.learningOutcomes = document.getElementById('lp-outcomes-input').value;
+                payload.competencies = document.getElementById('lp-competencies-input').value;
+                payload.extendedActivity = document.getElementById('lp-extended-input').value;
+            }
             payload.extraInstructions = document.getElementById('extra-sow').value;
         }
 
-        if (!payload.subject || !payload.strand) return alert("Subject and Strands are required.");
+        if (!payload.sowId && (!payload.subject || !payload.strand)) return alert("Subject and Strands are required.");
 
         showProgress(20, "Referring to KICD format...");
         setTimeout(() => showProgress(50, "Mapping learning outcomes..."), 1000);
@@ -824,10 +857,25 @@ async function loadSavedSowDropdown() {
 
 function loadSavedSowFields() {
     const select = document.getElementById('saved-sow-select');
-    if (!select || !select.value) return;
+    const lessonNumGroup = document.getElementById('lp-lesson-number-group');
+    const standardFields = document.getElementById('lp-standard-fields');
+    const guideBtn = document.getElementById('btn-generate-guide');
+
+    if (!select) return;
+
+    if (!select.value) {
+        if (lessonNumGroup) lessonNumGroup.style.display = 'none';
+        if (standardFields) standardFields.style.display = 'block';
+        if (guideBtn) guideBtn.style.display = 'none';
+        return;
+    }
 
     const selectedSow = savedSowsCache.find(s => s._id === select.value);
     if (!selectedSow) return;
+
+    if (lessonNumGroup) lessonNumGroup.style.display = 'block';
+    if (standardFields) standardFields.style.display = 'none';
+    if (guideBtn) guideBtn.style.display = 'block';
 
     const gradeSelect = document.getElementById('gradeSelect-lp');
     const termSelect = document.getElementById('termSelect-lp');
@@ -847,9 +895,48 @@ function loadSavedSowFields() {
     if (strandInput) {
         strandInput.value = selectedSow.strands || '';
     }
-    
-    alert(`📂 Pre-populated fields from "${selectedSow.title || 'Scheme of Work'}"! You can now refine the sub-strand/outcomes and hit Generate.`);
 }
+
+async function generateTeacherGuideNotes() {
+    try {
+        const select = document.getElementById('saved-sow-select');
+        if (!select || !select.value) return alert("Please select a Scheme of Work first.");
+
+        const lessonNumber = parseInt(document.getElementById('lp-lesson-number').value) || 1;
+        const payload = {
+            documentType: 'notes',
+            sowId: select.value,
+            lessonNumber: lessonNumber,
+            extraInstructions: document.getElementById('extra-sow').value,
+            teacherName: document.getElementById('profile-teacher').value || 'Facilitator',
+            schoolName: document.getElementById('profile-school').value || 'Institution'
+        };
+
+        showProgress(25, "Analysing Scheme of Work lesson...");
+        setTimeout(() => showProgress(60, "Generating pedagogical guide..."), 1200);
+
+        const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.status === 401 || res.status === 403) return logout();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Notes generation failed');
+
+        showProgress(100, "Done!");
+        setTimeout(() => {
+            displayOutput(data.html);
+            hideProgress();
+        }, 500);
+    } catch (err) {
+        alert("Generation Error: " + err.message);
+        hideProgress();
+    }
+}
+
+window.generateTeacherGuideNotes = generateTeacherGuideNotes;
 
 async function saveSOWToLibrary() {
     if (!lastGeneratedSow) return alert("No generated Scheme of Work found to save.");
@@ -887,4 +974,98 @@ async function saveSOWToLibrary() {
         alert("Failed to save Scheme of Work: " + e.message);
     }
 }
+
+// ── DUAL SUBJECT WORKSPACE SELECTOR SYSTEM ──
+let userSubject1 = '';
+let userSubject2 = '';
+let activeSubjectNum = 1;
+
+function initWorkspaceSelector(profile) {
+    const selector = document.getElementById('subject-workspace-selector');
+    if (!selector) return;
+
+    const userRole = localStorage.getItem('cbc_role') || profile.role || 'teacher';
+    if (userRole !== 'teacher') {
+        selector.style.display = 'none';
+        return;
+    }
+
+    userSubject1 = profile.subject1 || '';
+    userSubject2 = profile.subject2 || '';
+
+    // Fallback if subject1/subject2 not populated but subjects exists
+    if (!userSubject1 && !userSubject2 && profile.subjects) {
+        const subList = profile.subjects.split(',').map(s => s.trim()).filter(s => s);
+        userSubject1 = subList[0] || '';
+        userSubject2 = subList[1] || '';
+    }
+
+    if (!userSubject1 && !userSubject2) {
+        userSubject1 = 'Integrated Science';
+        userSubject2 = 'Mathematics';
+    }
+
+    const t1 = document.getElementById('workspace-subject1-title');
+    const t2 = document.getElementById('workspace-subject2-title');
+
+    if (t1) t1.textContent = userSubject1 || 'Subject 1';
+    if (t2) t2.textContent = userSubject2 || 'Subject 2';
+
+    selector.style.display = 'block';
+
+    const savedActive = localStorage.getItem('active_workspace_subject');
+    if (savedActive === '2') {
+        selectWorkspaceSubject(2, false);
+    } else {
+        selectWorkspaceSubject(1, false);
+    }
+}
+
+function selectWorkspaceSubject(num, showNotification = true) {
+    activeSubjectNum = num;
+    localStorage.setItem('active_workspace_subject', num.toString());
+
+    const card1 = document.getElementById('workspace-subject1');
+    const card2 = document.getElementById('workspace-subject2');
+
+    if (card1 && card2) {
+        card1.classList.toggle('active', num === 1);
+        card2.classList.toggle('active', num === 2);
+
+        const status1 = card1.querySelector('.workspace-status');
+        const status2 = card2.querySelector('.workspace-status');
+        if (status1) status1.textContent = num === 1 ? '🟢 Active Workspace' : 'Click to activate';
+        if (status2) status2.textContent = num === 2 ? '🟢 Active Workspace' : 'Click to activate';
+    }
+
+    const activeSubject = num === 1 ? userSubject1 : userSubject2;
+    if (!activeSubject) return;
+
+    // Auto-fill all subject fields in the UI
+    const sowSub = document.getElementById('sow-subject');
+    const lpSub = document.getElementById('lp-subject');
+    const rowSub = document.getElementById('row-subject');
+    const assessGradeSub = document.getElementById('assess-grade-subject');
+    const projSub = document.getElementById('proj-subject');
+
+    if (sowSub) sowSub.value = activeSubject;
+    if (lpSub) lpSub.value = activeSubject;
+    if (rowSub) rowSub.value = activeSubject;
+    if (projSub) projSub.value = activeSubject;
+
+    if (assessGradeSub) {
+        const currentVal = assessGradeSub.value || '';
+        const gradeMatch = currentVal.match(/^(Grade\s+\d+|PP1|PP2)\s+/i);
+        if (gradeMatch) {
+            assessGradeSub.value = `${gradeMatch[1]} ${activeSubject}`;
+        } else {
+            assessGradeSub.value = `Grade 8 ${activeSubject}`;
+        }
+    }
+
+    if (showNotification) {
+        console.log(`Switched to active subject: ${activeSubject}`);
+    }
+}
+window.selectWorkspaceSubject = selectWorkspaceSubject;
 

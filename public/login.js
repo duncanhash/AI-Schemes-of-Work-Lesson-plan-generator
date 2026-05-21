@@ -120,6 +120,11 @@ function switchMode() {
     switchBtn.textContent = isLoginMode ? "Don't have an account? Sign Up" : "Already have an account? Log In";
     document.getElementById('nameGroup').style.display = isLoginMode ? 'none' : 'block';
     
+    const subjectsGroup = document.getElementById('subjectsGroup');
+    if (subjectsGroup) {
+        subjectsGroup.style.display = (!isLoginMode && activeRole === 'teacher') ? 'block' : 'none';
+    }
+    
     // Hide portal selector switch during sign up (since role is chosen explicitly via radio buttons)
     const portalSelector = document.getElementById('roleSelectorPill');
     if (portalSelector) {
@@ -146,9 +151,23 @@ loginForm.addEventListener('submit', async (e) => {
     const name = formData.get('name');
     const role = formData.get('role');
 
+    let subject1 = '';
+    let subject2 = '';
+    if (!isLoginMode && role === 'teacher') {
+        subject1 = document.getElementById('subject1').value.trim();
+        subject2 = document.getElementById('subject2').value.trim();
+        if (!subject1 || !subject2) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Sign Up';
+            return alert("Please enter both teaching subjects.");
+        }
+    }
+
     try {
         const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
-        const body = isLoginMode ? { email, password, role } : { email, password, name, role };
+        const body = isLoginMode 
+            ? { email, password, role } 
+            : { email, password, name, role, subject1, subject2 };
 
         console.log(`Attempting ${isLoginMode ? 'Login' : 'Registration'} for:`, email);
 

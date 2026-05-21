@@ -167,6 +167,33 @@
                     </label>
                 </div>
             </div>
+            <div id="subjectsGroup" style="display: none; margin-top: 20px;">
+                <div style="display: flex; gap: 12px; text-align: left;">
+                    <div style="flex: 1;">
+                        <label>Subject 1</label>
+                        <input type="text" name="subject1" id="subject1" placeholder="e.g. Mathematics" list="subjectsList" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                    <div style="flex: 1;">
+                        <label>Subject 2</label>
+                        <input type="text" name="subject2" id="subject2" placeholder="e.g. Integrated Science" list="subjectsList" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                </div>
+                <datalist id="subjectsList">
+                    <option value="Integrated Science">
+                    <option value="Mathematics">
+                    <option value="English">
+                    <option value="Kiswahili">
+                    <option value="Social Studies">
+                    <option value="Creative Arts & Sports">
+                    <option value="Agriculture & Nutrition">
+                    <option value="Pre-Technical Studies">
+                    <option value="Christian Religious Education (CRE)">
+                    <option value="Islamic Religious Education (IRE)">
+                    <option value="Physical Education & Health">
+                    <option value="Home Science">
+                    <option value="Computer Science">
+                </datalist>
+            </div>
             <div class="input-group">
                 <label>Email Address</label>
                 <input type="email" name="email" id="email" placeholder="mwalimu@school.com" required
@@ -210,6 +237,9 @@
             const parent = document.getElementById('lblParent');
             const nameInput = document.getElementById('name');
             const emailInput = document.getElementById('email');
+            const subjectsGroup = document.getElementById('subjectsGroup');
+            const nameGroup = document.getElementById('nameGroup');
+            const isSignUp = nameGroup && nameGroup.style.display === 'block';
             
             [teacher, parent].forEach(el => {
                 el.style.background = 'rgba(255,255,255,0.05)'; 
@@ -221,10 +251,16 @@
                 teacher.style.background = 'rgba(124,107,255,0.2)'; teacher.style.borderColor = 'var(--accent)'; teacher.style.color = 'white';
                 if (nameInput) nameInput.placeholder = "Mwalimu Juma";
                 if (emailInput) emailInput.placeholder = "mwalimu@school.com";
+                if (subjectsGroup) {
+                    subjectsGroup.style.display = isSignUp ? 'block' : 'none';
+                }
             } else if (radio.value === 'parent') {
                 parent.style.background = 'rgba(0,212,170,0.2)'; parent.style.borderColor = '#00d4aa'; parent.style.color = 'white';
                 if (nameInput) nameInput.placeholder = "Mama/Baba Juma";
                 if (emailInput) emailInput.placeholder = "parent@email.com";
+                if (subjectsGroup) {
+                    subjectsGroup.style.display = 'none';
+                }
             }
         }
     </script>

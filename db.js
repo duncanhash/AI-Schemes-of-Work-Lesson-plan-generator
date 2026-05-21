@@ -75,6 +75,7 @@ if (USE_MONGO) {
         name: String, email: { type: String, unique: true }, password: { type: String, required: true },
         role: { type: String, default: 'teacher' }, otp: String, isVerified: { type: Boolean, default: false },
         curriculumText: String, school: String, subjects: String,
+        subject1: String, subject2: String,
         resetOtp: String, resetExpiry: Date
     });
     const portfolioSchema = new mongoose.Schema({
