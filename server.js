@@ -747,10 +747,80 @@ Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
                     targetTerm = sowObj.term;
                     targetSubject = sowObj.subject;
                     targetStrand = sowObj.strands;
-                    sowContext = `
-SCHEME OF WORK REFERENCE (Strictly extract details for Lesson Number ${lessonNumber} from this Scheme of Work table):
-${sowObj.html}
+                    
+                    let extractedSLO = '________________';
+                    let extractedKIQ = '________________';
+                    let extractedCompetencies = '________________';
+                    let extractedResources = '________________';
+                    let extractedSubStrand = '________________';
+                    
+                    const rows = sowObj.html.match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi);
+                    if (rows) {
+                        for (let r of rows) {
+                            const cells = r.match(/<td[^>]*>([\s\S]*?)<\/td>/gi);
+                            if (cells && cells.length >= 10) {
+                                const rowLessonText = cells[1].replace(/<[^>]+>/g, '').trim();
+                                if (rowLessonText === lessonNumber.toString() || rowLessonText.includes(` ${lessonNumber} `) || rowLessonText.includes(`Lesson ${lessonNumber}`)) {
+                                    extractedSubStrand = cells[3].replace(/<td[^>]*>/i, '').replace(/<\/td>/i, '').trim() || '________________';
+                                    extractedSLO = cells[4].replace(/<td[^>]*>/i, '').replace(/<\/td>/i, '').trim() || '________________';
+                                    extractedKIQ = cells[5].replace(/<td[^>]*>/i, '').replace(/<\/td>/i, '').trim() || '________________';
+                                    extractedCompetencies = cells[6].replace(/<td[^>]*>/i, '').replace(/<\/td>/i, '').trim() || '________________';
+                                    extractedResources = cells[7].replace(/<td[^>]*>/i, '').replace(/<\/td>/i, '').trim() || '________________';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    const raw = `
+<h4 style="${H4}">1. ADMINISTRATIVE DETAILS</h4>
+<table style="${TS}">
+    <tr>
+        <th style="${TH}" width="25%">School</th><td style="${TD}" width="25%">${schoolName || '________________'}</td>
+        <th style="${TH}" width="25%">Grade</th><td style="${TD}" width="25%">${targetGrade}</td>
+    </tr>
+    <tr>
+        <th style="${TH}">Learning Area</th><td style="${TD}">${targetSubject}</td>
+        <th style="${TH}">Date</th><td style="${TD}">________________</td>
+    </tr>
+    <tr>
+        <th style="${TH}">Strand</th><td style="${TD}">${targetStrand}</td>
+        <th style="${TH}">Time</th><td style="${TD}">________________</td>
+    </tr>
+    <tr>
+        <th style="${TH}">Sub-strand</th><td style="${TD}">${extractedSubStrand}</td>
+        <th style="${TH}">Duration</th><td style="${TD}">40 mins</td>
+    </tr>
+</table>
+
+<h4 style="${H4}">2. SPECIFIC LEARNING OUTCOMES</h4>
+<div>${extractedSLO}</div>
+
+<h4 style="${H4}">3. KEY INQUIRY QUESTIONS</h4>
+<div>${extractedKIQ}</div>
+
+<h4 style="${H4}">4. CORE COMPETENCIES & VALUES</h4>
+<div>${extractedCompetencies}</div>
+
+<h4 style="${H4}">5. LEARNING RESOURCES</h4>
+<div>${extractedResources}</div>
+
+<h4 style="${H4}">6. LESSON DEVELOPMENT</h4>
+<table style="${TS}">
+    <tr><th style="${TH}">Phase</th><th style="${TH}">Facilitator Activity</th><th style="${TH}">Learner Activity</th><th style="${TH}">Time</th></tr>
+    <tr><td style="${TD}">Introduction</td><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">5 mins</td></tr>
+    <tr><td style="${TD}">Lesson Development</td><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">25 mins</td></tr>
+    <tr><td style="${TD}">Conclusion</td><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">10 mins</td></tr>
+</table>
+
+<h4 style="${H4}">7. FACILITATOR'S REFLECTION</h4>
+<table style="${TS}">
+    <tr><th style="${TH}">What went well?</th><th style="${TH}">What needs improvement?</th><th style="${TH}">Follow-up action?</th></tr>
+    <tr><td style="${TD}"><br><br><br></td><td style="${TD}"></td><td style="${TD}"></td></tr>
+</table>
 `;
+                    html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">LESSON PLAN (Extracted from SOW) — ${targetSubject} | ${targetGrade} | Term ${targetTerm}</h3>${raw}${sigBlock}`;
+                    return res.json({ html: html, markdown: raw });
                 }
             }
 

@@ -113,6 +113,11 @@ function logout() {
     window.location.href = '/';
 }
 
+window.toggleSidebar = function() {
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar) sidebar.classList.toggle('open');
+};
+
 // ── KICD Dynamic Terms ──
 function updateTerms(context) {
     try {
@@ -148,16 +153,15 @@ function setOutputMode(mode) {
 }
 
 // ── Fetch Strands for Range Selection ──
-async function fetchStrands() {
-    const bubble = document.getElementById('bubble-sow-strand');
+async function fetchStrandsDropdown() {
+    const select = document.getElementById('sow-strand');
     const grade = document.getElementById('gradeSelect-sow').value;
     const subject = document.getElementById('sow-subject').value;
     const term = document.getElementById('termSelect-sow').value;
 
     if (!subject) return alert("Please enter a subject first.");
 
-    bubble.innerHTML = '<div style="text-align:center; padding:10px;">Fetching KICD Strands...</div>';
-    bubble.style.display = 'block';
+    select.innerHTML = '<option value="" disabled selected>Fetching KICD Strands...</option>';
 
     try {
         const res = await fetch('/api/suggest', {
@@ -168,31 +172,16 @@ async function fetchStrands() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
-        const strands = data.suggestion.split('\n').filter(s => s.trim());
-        bubble.innerHTML = `
-            <div style="font-size:12px; font-weight:700; margin-bottom:10px;">Select Strands to Include:</div>
-            <div style="max-height:150px; overflow-y:auto; margin-bottom:10px;">
-                ${strands.map((s, i) => `
-                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
-                        <input type="checkbox" id="st-${i}" value="${s}" checked>
-                        <label for="st-${i}" style="margin:0; font-size:12px; cursor:pointer;">${s}</label>
-                    </div>
-                `).join('')}
-            </div>
-            <div style="display:flex; gap:10px;">
-                <button class="suggest-action accept" onclick="applyStrandsSelection()">Apply Range</button>
-                <button class="suggest-action reject" onclick="closeBubble('sow-strand')">Cancel</button>
-            </div>
-        `;
-    } catch (e) { bubble.innerHTML = `<div style="color:#ff6b6b; padding:10px;">Error fetching strands.</div>`; }
+        const strands = data.suggestion.split('\n').filter(s => s.trim() && s.length > 2);
+        select.innerHTML = strands.map((s, i) => {
+            const cleanStrand = s.replace(/^[-*0-9.)\s]+/, '').trim();
+            return `<option value="${cleanStrand}">${cleanStrand}</option>`;
+        }).join('');
+    } catch (e) { 
+        select.innerHTML = `<option value="" disabled selected>Error fetching strands.</option>`;
+    }
 }
-
-function applyStrandsSelection() {
-    const checkboxes = document.querySelectorAll('#bubble-sow-strand input:checked');
-    const selected = Array.from(checkboxes).map(c => c.value).join(', ');
-    document.getElementById('sow-strand').value = selected;
-    closeBubble('sow-strand');
-}
+window.fetchStrandsDropdown = fetchStrandsDropdown;
 
 function toggleGenType(type) {
     const select = document.getElementById('saved-sow-select');
@@ -292,7 +281,11 @@ async function generateDocument(isTemplate = false) {
             payload.term = document.getElementById('termSelect-sow').value;
             payload.subject = document.getElementById('sow-subject').value;
             payload.strand = document.getElementById('sow-strand').value;
-            payload.extraInstructions = document.getElementById('extra-sow').value;
+            payload.extraInstructions = document.getElementById('extra-sow').value || '';
+            const holidays = document.getElementById('sow-holidays').value;
+            if (holidays) {
+                payload.extraInstructions += `\nInclude these holidays/breaks: ${holidays}`;
+            }
         } else {
             const select = document.getElementById('saved-sow-select');
             if (select && select.value) {
@@ -342,10 +335,14 @@ async function generateDocument(isTemplate = false) {
                     html: data.html
                 };
                 const saveBtn = document.getElementById('btn-save-sow-lib');
+                const pushLpBtn = document.getElementById('btn-push-lp');
                 if (saveBtn) saveBtn.style.display = 'inline-block';
+                if (pushLpBtn) pushLpBtn.style.display = 'inline-block';
             } else {
                 const saveBtn = document.getElementById('btn-save-sow-lib');
+                const pushLpBtn = document.getElementById('btn-push-lp');
                 if (saveBtn) saveBtn.style.display = 'none';
+                if (pushLpBtn) pushLpBtn.style.display = 'none';
             }
         }, 500);
     } catch (err) {
@@ -970,10 +967,31 @@ async function saveSOWToLibrary() {
         if (saveBtn) saveBtn.style.display = 'none';
 
         loadSavedSowDropdown();
+        return true;
     } catch (e) {
         alert("Failed to save Scheme of Work: " + e.message);
+        return false;
     }
 }
+
+async function pushSowToLessonPlan() {
+    const saveBtn = document.getElementById('btn-save-sow-lib');
+    if (saveBtn && saveBtn.style.display !== 'none') {
+        const saved = await saveSOWToLibrary();
+        if (!saved) return;
+    }
+    
+    document.getElementById('r-plan').click();
+    
+    setTimeout(() => {
+        const select = document.getElementById('saved-sow-select');
+        if (select && select.options.length > 1) {
+            select.selectedIndex = 1;
+            loadSavedSowFields();
+        }
+    }, 500);
+}
+window.pushSowToLessonPlan = pushSowToLessonPlan;
 
 // ── DUAL SUBJECT WORKSPACE SELECTOR SYSTEM ──
 let userSubject1 = '';

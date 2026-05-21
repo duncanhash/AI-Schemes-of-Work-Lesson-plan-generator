@@ -47,13 +47,14 @@
 
         <!-- Main Content -->
         <main class="main-content">
-            <div id="welcome-msg-container" style="margin-bottom: 20px;">
+            <div id="welcome-msg-container" style="margin-bottom: 20px; display: flex; align-items: center; gap: 16px;">
+                <button class="mobile-menu-btn" onclick="toggleSidebar()" style="display: none; background: transparent; border: none; font-size: 24px; color: var(--text); cursor: pointer;">☰</button>
                 <h1 id="welcomeHeader" style="font-family:'Syne', sans-serif; font-size: 28px; margin:0;">Connecting to
                     Pedagogy...</h1>
             </div>
 
             <!-- Dual Subject Workspace Selector -->
-            <div id="subject-workspace-selector" class="subject-workspace-container" style="display: none;">
+            <div id="subject-workspace-selector" class="subject-workspace-container">
                 <div class="workspace-cards-wrapper">
                     <!-- Subject 1 Side -->
                     <div id="workspace-subject1" class="workspace-card active" onclick="selectWorkspaceSubject(1)">
@@ -149,12 +150,17 @@
                         <div class="input-group" style="margin-top:14px;">
                             <label>Strands / Sub-strands Range (Required)</label>
                             <div class="suggest-row">
-                                <textarea id="sow-strand" placeholder="Enter strands or fetch from KICD..." required
-                                    rows="2"></textarea>
-                                <button class="suggest-btn" style="height:fit-content;" onclick="fetchStrands()">✨ Fetch
+                                <select id="sow-strand" required style="flex:1;">
+                                    <option value="" disabled selected>Select a Strand...</option>
+                                </select>
+                                <button class="suggest-btn" style="height:fit-content;" onclick="fetchStrandsDropdown()">✨ Fetch
                                     KICD Strands</button>
                             </div>
-                            <div class="suggest-bubble" id="bubble-sow-strand"></div>
+                            <p style="font-size:11px; color:var(--muted); margin-top:4px;">Strands are automatically fetched based on Grade and Subject.</p>
+                        </div>
+                        <div class="input-group" style="margin-top:14px;">
+                            <label>Holidays / Breaks to Include</label>
+                            <input type="text" id="sow-holidays" placeholder="e.g. Mid-term break week 7, Public holidays">
                         </div>
                     </div>
 
@@ -549,6 +555,7 @@
                 <p id="progress-label">Processing...</p>
             </div>
             <div class="download-bar" id="download-bar" style="display:none; margin-bottom:20px; text-align:center;">
+                <button class="btn-primary" id="btn-push-lp" onclick="pushSowToLessonPlan()" style="background:linear-gradient(135deg, var(--accent), #5643e6); color:white; font-weight:700; margin-right:10px; display:none;">📝 Push to Lesson Plan</button>
                 <button class="btn-primary" id="btn-save-sow-lib" onclick="saveSOWToLibrary()" style="background:#00d4aa; color:#111; font-weight:700; margin-right:10px; display:none;">💾 Save SOW to Library</button>
                 <button class="btn-primary" onclick="pushToParent()" style="background:var(--accent2); color:white; margin-right:10px;">🚀 Push to Parent Dashboard</button>
                 <button class="btn-primary" onclick="downloadDocx()" style="background:#2b579a;">📥 Download
