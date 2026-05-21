@@ -33,6 +33,9 @@
                 <button class="nav-btn" onclick="showSection('chat')">
                     <span>💬</span> Parent Hub
                 </button>
+                <button class="nav-btn" onclick="showSection('progress')">
+                    <span>📈</span> Learner Progress
+                </button>
                 <div class="divider"></div>
                 <button class="nav-btn logout-btn" onclick="logout()">
                     <span>🚪</span> Log Out
@@ -88,6 +91,20 @@
                                 <span style="font-size:20px;">➔</span>
                             </button>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Learner Progress Section -->
+            <section id="view-progress" class="view-section">
+                <div class="hero">
+                    <span class="hero-badge">TRACKING</span>
+                    <h1>Learner <span>Progress.</span></h1>
+                    <p>View your child's exam performances and CBC rubric assessments.</p>
+                </div>
+                <div id="parent-progress-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;">
+                    <div class="card" style="grid-column: 1/-1; text-align: center; padding: 60px;">
+                        <p style="color:var(--muted);">No progress records found yet.</p>
                     </div>
                 </div>
             </section>

@@ -8,6 +8,8 @@
     <!-- Use absolute paths for absolute reliability -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=Syne:wght@800&display=swap"
         rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css"/>
     <link href="/style.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -24,14 +26,19 @@
             </div>
             <nav class="sidebar-nav" id="mainSidebarNav">
                 <button class="nav-btn active" data-target="view-sow">📅 SOW &amp; Lesson Plans</button>
-                <button class="nav-btn" data-target="view-planner">🗓️ Weekly Planner</button>
+                <button class="nav-btn" data-target="view-planner" id="nav-planner">
+                    <span>📅</span> Weekly Planner
+                </button>
                 <button class="nav-btn" data-target="view-row">📖 Record of Work</button>
                 <button class="nav-btn" data-target="view-assess">📊 Assessment Tools</button>
                 <button class="nav-btn" data-target="view-project">🚀 Project Generator</button>
                 <button class="nav-btn" data-target="view-portfolio">📸 Portfolio Album</button>
                 <button class="nav-btn" data-target="view-chat">💬 Facilitator Community</button>
+                <button class="nav-btn" data-target="view-progress" id="nav-progress">
+                    <span>📈</span> Learner Progress
+                </button>
                 <div class="divider"></div>
-                <button class="nav-btn" data-target="view-profile">⚙️ Profile Settings</button>
+                <button class="nav-btn" data-target="view-profile" id="nav-profile">⚙️ Profile Settings</button>
                 <button class="nav-btn logout-btn" onclick="logout()">🚪 Log Out</button>
                 <div class="storage-widget">
                     <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
@@ -544,6 +551,75 @@
                         onclick="uploadCurriculum()">📤 Upload Curriculum</button>
                     <p id="curriculum-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Curriculum
                         Uploaded Successfully</p>
+                </div>
+            </section>
+
+            <!-- ── LEARNER PROGRESS TRACKER ── -->
+            <section id="view-progress" class="view-section">
+                <div class="hero">
+                    <span class="hero-badge">TRACKING</span>
+                    <h1>Learner <span>Progress.</span></h1>
+                    <p>Enter student exam performances and assess their understanding using a rubric.</p>
+                </div>
+                
+                <div class="card">
+                    <h3 style="margin-bottom:15px; font-size:18px;">Add New Progress Record</h3>
+                    <div class="input-grid">
+                        <div class="input-group">
+                            <label>Learner Full Name</label>
+                            <input type="text" id="prog-student" placeholder="e.g. John Doe">
+                        </div>
+                        <div class="input-group">
+                            <label>Term</label>
+                            <select id="prog-term">
+                                <option value="Term 1">Term 1</option>
+                                <option value="Term 2">Term 2</option>
+                                <option value="Term 3">Term 3</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin:20px 0 10px; font-size:14px; color:var(--muted);">Exam Scores (%)</h4>
+                    <div class="input-grid">
+                        <div class="input-group">
+                            <label>Mathematics</label>
+                            <input type="number" id="prog-math" placeholder="e.g. 85">
+                        </div>
+                        <div class="input-group">
+                            <label>English / Language</label>
+                            <input type="number" id="prog-eng" placeholder="e.g. 78">
+                        </div>
+                        <div class="input-group">
+                            <label>Science / Technical</label>
+                            <input type="number" id="prog-sci" placeholder="e.g. 92">
+                        </div>
+                    </div>
+
+                    <h4 style="margin:20px 0 10px; font-size:14px; color:var(--muted);">CBC Rubric Assessment</h4>
+                    <div class="input-group">
+                        <label>Overall Understanding Level</label>
+                        <select id="prog-rubric">
+                            <option value="Exceeding Expectations (4)">Exceeding Expectations (4) - Highly consistent</option>
+                            <option value="Meeting Expectations (3)">Meeting Expectations (3) - Understands most concepts</option>
+                            <option value="Approaching Expectations (2)">Approaching Expectations (2) - Needs some support</option>
+                            <option value="Below Expectations (1)">Below Expectations (1) - Needs intensive support</option>
+                        </select>
+                    </div>
+                    <div class="input-group" style="margin-top:14px;">
+                        <label>Teacher's Remarks</label>
+                        <textarea id="prog-remarks" rows="2" placeholder="Brief comment on learner's progress..."></textarea>
+                    </div>
+                    <div class="input-group" style="margin-top:14px;">
+                        <label>Share with Parent (Email)</label>
+                        <input type="email" id="prog-parent-email" placeholder="parent@email.com">
+                    </div>
+                    
+                    <button class="btn-generate" onclick="saveProgressRecord()" style="margin-top:20px;">💾 Save Progress Record</button>
+                </div>
+                
+                <h3 style="margin-top:40px; margin-bottom:20px; font-size:20px;">Saved Records</h3>
+                <div id="progress-list-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;">
+                    <div style="color:var(--muted); text-align:center; padding: 20px; grid-column: 1/-1;">No records saved yet.</div>
                 </div>
             </section>
 

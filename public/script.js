@@ -35,6 +35,8 @@ window.addEventListener('DOMContentLoaded', () => {
         updateTerms('sow');
         updateStorageUsage();
         loadSavedSowDropdown();
+        loadProgressRecords();
+        initWalkthrough();
         console.log("Pedagogy Engine: All systems green.");
     } catch (e) {
         console.error("Initialization Error:", e);
@@ -94,6 +96,7 @@ function setupNavigation() {
                 if (target === 'view-chat') loadChat();
                 if (target === 'view-planner') renderPlanner();
                 if (target === 'view-sow') loadSavedSowDropdown();
+                if (target === 'view-progress') loadProgressRecords();
 
                 // Reset UI
                 const preview = document.getElementById('preview-area');
@@ -1086,4 +1089,92 @@ function selectWorkspaceSubject(num, showNotification = true) {
     }
 }
 window.selectWorkspaceSubject = selectWorkspaceSubject;
+
+// ── ONBOARDING WALKTHROUGH ──
+function initWalkthrough() {
+    const loginCount = parseInt(localStorage.getItem('pedagogy_login_count') || '0');
+    localStorage.setItem('pedagogy_login_count', (loginCount + 1).toString());
+
+    if (loginCount < 2 && window.driver) {
+        const driverObj = window.driver.driver({
+            showProgress: true,
+            steps: [
+                { element: '#subject-workspace-selector', popover: { title: 'Workspace Switcher', description: 'Click here to switch between your two assigned teaching subjects instantly.' } },
+                { element: '#nav-profile', popover: { title: 'Profile Settings', description: 'First, make sure to set your two subjects and school details here.' } },
+                { element: '#nav-sow', popover: { title: 'SOW Generator', description: 'Use this to generate KICD compliant Schemes of Work.' } },
+                { element: '#nav-progress', popover: { title: 'Learner Progress', description: 'Track your students\\' exam performances and rubrics here!' } }
+            ]
+        });
+        setTimeout(() => driverObj.drive(), 1500);
+    }
+}
+
+// ── LEARNER PROGRESS ──
+async function saveProgressRecord() {
+    const data = {
+        studentName: document.getElementById('prog-student').value,
+        term: document.getElementById('prog-term').value,
+        mathScore: document.getElementById('prog-math').value,
+        englishScore: document.getElementById('prog-eng').value,
+        scienceScore: document.getElementById('prog-sci').value,
+        rubric: document.getElementById('prog-rubric').value,
+        remarks: document.getElementById('prog-remarks').value,
+        sharedWith: document.getElementById('prog-parent-email').value
+    };
+    
+    if (!data.studentName) return alert("Learner name is required.");
+    
+    try {
+        const res = await fetch('/api/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) {
+            alert("✅ Progress Record Saved successfully!");
+            document.getElementById('prog-student').value = '';
+            document.getElementById('prog-math').value = '';
+            document.getElementById('prog-eng').value = '';
+            document.getElementById('prog-sci').value = '';
+            document.getElementById('prog-remarks').value = '';
+            document.getElementById('prog-parent-email').value = '';
+            loadProgressRecords();
+        } else {
+            const err = await res.json();
+            alert("Error: " + err.error);
+        }
+    } catch(e) { alert("Failed to save progress."); }
+}
+window.saveProgressRecord = saveProgressRecord;
+
+async function loadProgressRecords() {
+    try {
+        const res = await fetch('/api/progress', { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) return;
+        const records = await res.json();
+        
+        const container = document.getElementById('progress-list-container');
+        if (!container) return;
+        
+        if (records.length === 0) {
+            container.innerHTML = '<div style="color:var(--muted); text-align:center; padding: 20px; grid-column: 1/-1;">No records saved yet.</div>';
+            return;
+        }
+        
+        container.innerHTML = records.map(r => `
+            <div class="card" style="padding:20px; margin-bottom:0;">
+                <h4 style="margin:0 0 10px; font-size:16px;">${r.studentName} <span style="font-size:12px; font-weight:normal; color:var(--muted);">(${r.term})</span></h4>
+                <div style="font-size:13px; margin-bottom:10px;">
+                    <strong>Math:</strong> ${r.mathScore || '-'}% &nbsp; 
+                    <strong>English:</strong> ${r.englishScore || '-'}% &nbsp; 
+                    <strong>Science:</strong> ${r.scienceScore || '-'}%
+                </div>
+                <div style="font-size:13px; color:var(--accent2); margin-bottom:10px;"><strong>Level:</strong> ${r.rubric}</div>
+                <p style="font-size:12px; color:var(--muted); margin:0;">${r.remarks || 'No remarks.'}</p>
+                ${r.sharedWith ? `<div style="font-size:11px; margin-top:10px; color:#3b82f6;">Shared with: ${r.sharedWith}</div>` : ''}
+            </div>
+        `).join('');
+    } catch(e) {}
+}
+window.loadProgressRecords = loadProgressRecords;
 

@@ -7,7 +7,7 @@ const USE_MONGO = process.env.MONGODB_URI ? true : false;
 
 // ── LOCAL JSON FALLBACK (Mock Model) ──
 function readDB() {
-    if (!fs.existsSync(DB_PATH)) return { users: [], portfolios: [], messages: [], plans: [] };
+    if (!fs.existsSync(DB_PATH)) return { users: [], portfolios: [], messages: [], plans: [], sows: [], progress: [] };
     return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
 }
 function writeDB(data) {
@@ -68,7 +68,7 @@ class MockModel {
 }
 
 // ── MONGOOSE MODELS ──
-let User, Portfolio, ChatMessage, WeeklyPlan, SavedSOW;
+let User, Portfolio, ChatMessage, WeeklyPlan, SavedSOW, LearnerProgress;
 
 if (USE_MONGO) {
     const userSchema = new mongoose.Schema({
@@ -91,18 +91,26 @@ if (USE_MONGO) {
         userEmail: String, title: String, grade: String, subject: String, term: String, strands: String,
         html: String, timestamp: { type: Number, default: Date.now }
     });
+    const progressSchema = new mongoose.Schema({
+        teacherEmail: String, studentName: String, term: String,
+        mathScore: String, englishScore: String, scienceScore: String,
+        rubric: String, remarks: String, sharedWith: String,
+        timestamp: { type: Number, default: Date.now }
+    });
 
     User = mongoose.model('User', userSchema);
     Portfolio = mongoose.model('Portfolio', portfolioSchema);
     ChatMessage = mongoose.model('ChatMessage', chatSchema);
     WeeklyPlan = mongoose.model('WeeklyPlan', planSchema);
     SavedSOW = mongoose.model('SavedSOW', sowSchema);
+    LearnerProgress = mongoose.model('LearnerProgress', progressSchema);
 } else {
     User = class extends MockModel { constructor(d) { super(d, 'users'); } static get _collectionName() { return 'users'; } };
     Portfolio = class extends MockModel { constructor(d) { super(d, 'portfolios'); } static get _collectionName() { return 'portfolios'; } };
     ChatMessage = class extends MockModel { constructor(d) { super(d, 'messages'); } static get _collectionName() { return 'messages'; } };
     WeeklyPlan = class extends MockModel { constructor(d) { super(d, 'plans'); } static get _collectionName() { return 'plans'; } };
     SavedSOW = class extends MockModel { constructor(d) { super(d, 'sows'); } static get _collectionName() { return 'sows'; } };
+    LearnerProgress = class extends MockModel { constructor(d) { super(d, 'progress'); } static get _collectionName() { return 'progress'; } };
 }
 
 const connectDB = async () => {
@@ -116,8 +124,8 @@ const connectDB = async () => {
         }
     } else {
         console.warn('⚠️  MONGODB DISCONNECTED: Using Local JSON Database (local_db.json)');
-        if (!fs.existsSync(DB_PATH)) writeDB({ users: [], portfolios: [], messages: [], plans: [], sows: [] });
+        if (!fs.existsSync(DB_PATH)) writeDB({ users: [], portfolios: [], messages: [], plans: [], sows: [], progress: [] });
     }
 };
 
-module.exports = { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, connectDB };
+module.exports = { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, LearnerProgress, connectDB };

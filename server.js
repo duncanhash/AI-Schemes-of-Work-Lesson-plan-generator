@@ -472,6 +472,22 @@ io.on('connection', socket => {
     });
 });
 
+// ── Automated CBC News Bot ──
+setInterval(async () => {
+    try {
+        const cbcTips = [
+            "CBC News: Formative assessments should be integrated into every lesson phase.",
+            "Education Update: KICD emphasizes using locally available materials to foster creativity.",
+            "CBC Tip: Peer assessment encourages critical thinking and communication skills.",
+            "CBC Reminder: Ensure all 7 Core Competencies are actively practiced across subjects."
+        ];
+        const tip = cbcTips[Math.floor(Math.random() * cbcTips.length)];
+        const newMsg = new ChatMessage({ sender: "CBC News Bot 🤖", text: tip, channel: 'staff', time: new Date().toLocaleTimeString() });
+        await newMsg.save();
+        io.emit(`chat:staff`, newMsg);
+    } catch (err) {}
+}, 180000); // Broadcast every 3 minutes
+
 // ── Chat API ──
 // Fetch recent messages for a channel (limit 50)
 app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
@@ -501,6 +517,32 @@ app.post('/api/chat/:channel', authenticateToken, async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: 'Failed to send message' });
     }
+});
+
+// ── Learner Progress API ──
+app.get('/api/progress', authenticateToken, async (req, res) => {
+    try {
+        const records = await LearnerProgress.find({ teacherEmail: req.user.email });
+        res.json(records);
+    } catch (err) { res.status(500).json({ error: 'Failed to fetch progress records' }); }
+});
+
+app.post('/api/progress', authenticateToken, async (req, res) => {
+    const { studentName, term, mathScore, englishScore, scienceScore, rubric, remarks, sharedWith } = req.body;
+    try {
+        const newRecord = new LearnerProgress({
+            teacherEmail: req.user.email, studentName, term, mathScore, englishScore, scienceScore, rubric, remarks, sharedWith
+        });
+        await newRecord.save();
+        res.json({ message: 'Progress saved', record: newRecord });
+    } catch (err) { res.status(500).json({ error: 'Failed to save progress' }); }
+});
+
+app.get('/api/parent/progress', authenticateToken, async (req, res) => {
+    try {
+        const records = await LearnerProgress.find({ sharedWith: req.user.email });
+        res.json(records);
+    } catch (err) { res.status(500).json({ error: 'Failed to fetch shared progress records' }); }
 });
 
 // Start server with Socket.io

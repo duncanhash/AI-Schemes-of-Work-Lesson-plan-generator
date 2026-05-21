@@ -16,8 +16,8 @@ function showSection(sectionId) {
     
     document.getElementById(`view-${sectionId}`).classList.add('active');
     event.currentTarget.classList.add('active');
-
     if (sectionId === 'records') loadRecords();
+    if (sectionId === 'progress') loadParentProgress();
     if (sectionId === 'chat') startChatPolling();
     else stopChatPolling();
 }
@@ -99,6 +99,37 @@ function viewRecordDetails(record) {
 
 function closeModal() {
     document.getElementById('recordModal').style.display = 'none';
+}
+
+// ── Load Parent Progress ──
+async function loadParentProgress() {
+    try {
+        const res = await fetch('/api/parent/progress', { headers: { 'Authorization': `Bearer ${localStorage.getItem('cbc_token')}` } });
+        if (!res.ok) return;
+        const records = await res.json();
+        
+        const container = document.getElementById('parent-progress-container');
+        if (!container) return;
+        
+        if (records.length === 0) {
+            container.innerHTML = '<div class="card" style="grid-column: 1/-1; text-align: center; padding: 60px;"><p style="color:var(--muted);">No progress records found yet.</p></div>';
+            return;
+        }
+        
+        container.innerHTML = records.map(r => `
+            <div class="card" style="padding:20px; margin-bottom:0;">
+                <h4 style="margin:0 0 10px; font-size:16px;">${r.studentName} <span style="font-size:12px; font-weight:normal; color:var(--muted);">(${r.term})</span></h4>
+                <div style="font-size:13px; margin-bottom:10px;">
+                    <strong>Math:</strong> ${r.mathScore || '-'}% &nbsp; 
+                    <strong>English:</strong> ${r.englishScore || '-'}% &nbsp; 
+                    <strong>Science:</strong> ${r.scienceScore || '-'}%
+                </div>
+                <div style="font-size:13px; color:var(--accent2); margin-bottom:10px;"><strong>Level:</strong> ${r.rubric}</div>
+                <p style="font-size:12px; color:var(--muted); margin:0;">${r.remarks || 'No remarks.'}</p>
+                <div style="font-size:11px; margin-top:10px; color:#3b82f6;">Teacher: ${r.teacherEmail}</div>
+            </div>
+        `).join('');
+    } catch(e) {}
 }
 
 // ── Parent Hub (Chat) ──
