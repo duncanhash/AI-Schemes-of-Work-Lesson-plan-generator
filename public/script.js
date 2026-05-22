@@ -58,7 +58,7 @@ async function populateProfileFields() {
         if (pSchool) pSchool.value = profile.school || '';
         if (uEmail) uEmail.textContent = userEmail || 'facilitator@pedagogy.com';
 
-        // Also update the welcome header - Use only first name
+        // Update the welcome header
         const header = document.getElementById('welcomeHeader');
         if (header) {
             const firstName = profile.name ? profile.name.split(' ')[0] : 'Facilitator';
@@ -68,6 +68,13 @@ async function populateProfileFields() {
         // Populate subjects
         const pSubjects = document.getElementById('profile-subjects');
         if (pSubjects) pSubjects.value = profile.subjects || '';
+
+        // Show profile picture everywhere
+        if (profile.profilePicture) {
+            setProfilePictureUI(profile.profilePicture, profile.name);
+        } else if (profile.name) {
+            setProfilePictureUI(null, profile.name);
+        }
 
         // Initialize Dual Workspace
         initWorkspaceSelector(profile);
@@ -103,6 +110,12 @@ function setupNavigation() {
                 const dlBar = document.getElementById('download-bar');
                 if (preview) preview.style.display = 'none';
                 if (dlBar) dlBar.style.display = 'none';
+
+                // Close sidebar on mobile
+                const sidebar = document.querySelector('.sidebar');
+                if (sidebar && window.innerWidth <= 900) {
+                    sidebar.classList.remove('open');
+                }
             } catch (err) {
                 console.error("Navigation error:", err);
             }
@@ -490,13 +503,33 @@ async function loadChat() {
         const container = document.getElementById('chat-messages');
         if (!container) return;
 
-        container.innerHTML = messages.map(m => `
-            <div class="chat-msg ${m.sender === userEmail ? 'sent' : 'received'}">
-                <span class="chat-sender">${m.sender === userEmail ? 'You' : m.sender}</span>
-                ${m.text}
-                <span class="chat-time">${m.time}</span>
-            </div>
-        `).join('');
+        // Get current user's profile picture for sent messages
+        const sidebarImg = document.getElementById('sidebar-avatar-img');
+        const sidebarInitials = document.getElementById('sidebar-avatar-initials');
+        const myPic = sidebarImg && sidebarImg.style.display !== 'none' ? sidebarImg.src : null;
+        const myInitials = sidebarInitials ? sidebarInitials.textContent : '👤';
+
+        container.innerHTML = messages.map(m => {
+            const isMine = m.sender === userEmail;
+            const isBot = m.sender && m.sender.includes('Bot');
+            const avatarContent = isBot 
+                ? `<div class="chat-avatar" style="background:linear-gradient(135deg,#00d4aa,#00a388);">🤖</div>`
+                : isMine 
+                    ? (myPic ? `<div class="chat-avatar"><img src="${myPic}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>` 
+                             : `<div class="chat-avatar" style="background:linear-gradient(135deg,var(--accent),#5643e6);">${myInitials}</div>`)
+                    : `<div class="chat-avatar" style="background:rgba(255,255,255,0.08);">${m.sender ? m.sender[0].toUpperCase() : '?'}</div>`;
+            return `
+                <div class="chat-msg ${isMine ? 'sent' : 'received'}">
+                    ${!isMine ? avatarContent : ''}
+                    <div class="chat-bubble">
+                        <span class="chat-sender">${isMine ? 'You' : m.sender}</span>
+                        ${m.text}
+                        <span class="chat-time">${m.time}</span>
+                    </div>
+                    ${isMine ? avatarContent : ''}
+                </div>
+            `;
+        }).join('');
         container.scrollTop = container.scrollHeight;
     } catch (err) { console.error("Chat error:", err); }
 }
@@ -664,7 +697,61 @@ async function savePlanner() {
     } catch (e) { alert("Save failed"); }
 }
 
-// ── Profile & Helpers ──
+// ── Profile Picture Helpers ──
+let pendingProfilePicBase64 = null;
+
+function setProfilePictureUI(picUrl, name) {
+    const initials = name ? name.trim().split(' ').map(p => p[0]).join('').toUpperCase().substring(0, 2) : '👤';
+    
+    // Sidebar avatar
+    const sidebarImg = document.getElementById('sidebar-avatar-img');
+    const sidebarInitials = document.getElementById('sidebar-avatar-initials');
+    if (sidebarImg && sidebarInitials) {
+        if (picUrl) {
+            sidebarImg.src = picUrl;
+            sidebarImg.style.display = 'block';
+            sidebarInitials.style.display = 'none';
+        } else {
+            sidebarInitials.textContent = initials;
+            sidebarInitials.style.display = 'block';
+            sidebarImg.style.display = 'none';
+        }
+    }
+
+    // Profile page preview
+    const profileImg = document.getElementById('profile-pic-img');
+    const profileInitials = document.getElementById('profile-pic-initials');
+    if (profileImg && profileInitials) {
+        if (picUrl) {
+            profileImg.src = picUrl;
+            profileImg.style.display = 'block';
+            profileInitials.style.display = 'none';
+        } else {
+            profileInitials.textContent = initials;
+            profileInitials.style.display = 'block';
+            profileImg.style.display = 'none';
+        }
+    }
+}
+
+window.previewProfilePicture = function(input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) return alert('Photo must be under 2MB.');
+    toBase64(file).then(base64 => {
+        pendingProfilePicBase64 = base64;
+        // Show preview immediately
+        const profileImg = document.getElementById('profile-pic-img');
+        const profileInitials = document.getElementById('profile-pic-initials');
+        const sidebarImg = document.getElementById('sidebar-avatar-img');
+        const sidebarInitials = document.getElementById('sidebar-avatar-initials');
+        if (profileImg) { profileImg.src = base64; profileImg.style.display = 'block'; }
+        if (profileInitials) profileInitials.style.display = 'none';
+        if (sidebarImg) { sidebarImg.src = base64; sidebarImg.style.display = 'block'; }
+        if (sidebarInitials) sidebarInitials.style.display = 'none';
+    });
+};
+
 async function saveProfile() {
     try {
         const name = document.getElementById('profile-teacher').value;
@@ -673,23 +760,27 @@ async function saveProfile() {
 
         // Limit to 2 subjects
         const subList = subjects.split(',').map(s => s.trim()).filter(s => s);
-        if (subList.length > 2) return alert("Teachers are limited to a maximum of 2 subjects.");
+        if (subList.length > 2) return alert('Teachers are limited to a maximum of 2 subjects.');
+
+        const body = { name, school, subjects };
+        if (pendingProfilePicBase64) body.profilePicture = pendingProfilePicBase64;
 
         const res = await fetch('/api/profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ name, school, subjects })
+            body: JSON.stringify(body)
         });
 
         if (res.ok) {
-            populateProfileFields();
+            pendingProfilePicBase64 = null;
+            await populateProfileFields(); // Re-fetch and refresh all UI
             const msg = document.getElementById('profile-msg');
             if (msg) {
                 msg.style.display = 'block';
                 setTimeout(() => msg.style.display = 'none', 3000);
             }
         }
-    } catch (e) { console.error("Profile Save Error:", e); }
+    } catch (e) { console.error('Profile Save Error:', e); }
 }
 
 async function uploadCurriculum() {
@@ -1021,21 +1112,25 @@ function initWorkspaceSelector(profile) {
         userSubject2 = subList[1] || '';
     }
 
-    if (!userSubject1 && !userSubject2) {
-        userSubject1 = 'Integrated Science';
-        userSubject2 = 'Mathematics';
-    }
-
     const t1 = document.getElementById('workspace-subject1-title');
     const t2 = document.getElementById('workspace-subject2-title');
+    const card2 = document.getElementById('workspace-subject2');
 
-    if (t1) t1.textContent = userSubject1 || 'Subject 1';
-    if (t2) t2.textContent = userSubject2 || 'Subject 2';
+    if (t1) t1.textContent = userSubject1 || 'Set in Profile';
+    
+    if (!userSubject2) {
+        // No second subject — show a helpful prompt, dim the card slightly
+        if (t2) t2.textContent = '+ Add 2nd Subject';
+        if (card2) card2.style.opacity = '0.6';
+    } else {
+        if (t2) t2.textContent = userSubject2;
+        if (card2) card2.style.opacity = '1';
+    }
 
     selector.style.display = 'block';
 
     const savedActive = localStorage.getItem('active_workspace_subject');
-    if (savedActive === '2') {
+    if (savedActive === '2' && userSubject2) {
         selectWorkspaceSubject(2, false);
     } else {
         selectWorkspaceSubject(1, false);
@@ -1101,7 +1196,7 @@ function initWalkthrough() {
             steps: [
                 { element: '#subject-workspace-selector', popover: { title: 'Workspace Switcher', description: 'Click here to switch between your two assigned teaching subjects instantly.' } },
                 { element: '#nav-profile', popover: { title: 'Profile Settings', description: 'First, make sure to set your two subjects and school details here.' } },
-                { element: '#nav-sow', popover: { title: 'SOW Generator', description: 'Use this to generate KICD compliant Schemes of Work.' } },
+                { element: '[data-target="view-sow"]', popover: { title: 'SOW Generator', description: 'Use this to generate KICD compliant Schemes of Work.' } },
                 { element: '#nav-progress', popover: { title: 'Learner Progress', description: 'Track your students\\' exam performances and rubrics here!' } }
             ]
         });

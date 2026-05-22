@@ -10,7 +10,7 @@ const htmlToDocx = require('html-to-docx');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 require('dotenv').config();
-const { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, connectDB } = require('./db');
+const { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, LearnerProgress, connectDB } = require('./db');
 
 const upload = multer({ dest: 'uploads/' });
 
@@ -302,28 +302,35 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
             subjects: user.subjects || '',
             subject1: user.subject1 || '',
             subject2: user.subject2 || '',
-            role: user.role || 'teacher'
+            role: user.role || 'teacher',
+            profilePicture: user.profilePicture || ''
         });
     } catch (err) { res.status(500).json({ error: 'Profile load error' }); }
 });
 
 app.post('/api/profile', authenticateToken, async (req, res) => {
-    const { name, school, subjects } = req.body;
+    const { name, school, subjects, profilePicture } = req.body;
     try {
         const subList = (subjects || '').split(',').map(s => s.trim()).filter(s => s);
         const subject1 = subList[0] || '';
         const subject2 = subList[1] || '';
         
-        await User.findOneAndUpdate(
-            { email: req.user.email }, 
-            { 
-                profileTeacher: name, 
-                profileSchool: school, 
-                subjects: (subject1 && subject2) ? `${subject1}, ${subject2}` : (subject1 || subject2 || ''),
-                subject1,
-                subject2
-            }
-        );
+        const updateData = { 
+            profileTeacher: name, 
+            profileSchool: school, 
+            subjects: (subject1 && subject2) ? `${subject1}, ${subject2}` : (subject1 || subject2 || ''),
+            subject1,
+            subject2
+        };
+
+        // Only update picture if one was provided
+        if (profilePicture) {
+            // Save profile picture to disk to save DB space
+            const picPath = saveBase64Image(profilePicture);
+            updateData.profilePicture = picPath;
+        }
+        
+        await User.findOneAndUpdate({ email: req.user.email }, updateData);
         res.json({ message: 'Profile updated' });
     } catch (err) { res.status(500).json({ error: 'Profile save error' }); }
 });

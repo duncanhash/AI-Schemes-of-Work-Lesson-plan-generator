@@ -76,6 +76,8 @@ if (USE_MONGO) {
         role: { type: String, default: 'teacher' }, otp: String, isVerified: { type: Boolean, default: false },
         curriculumText: String, school: String, subjects: String,
         subject1: String, subject2: String,
+        profileTeacher: String, profileSchool: String,
+        profilePicture: String,
         resetOtp: String, resetExpiry: Date
     });
     const portfolioSchema = new mongoose.Schema({
