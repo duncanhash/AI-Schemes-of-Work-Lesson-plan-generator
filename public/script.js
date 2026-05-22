@@ -1197,7 +1197,7 @@ function initWalkthrough() {
                 { element: '#subject-workspace-selector', popover: { title: 'Workspace Switcher', description: 'Click here to switch between your two assigned teaching subjects instantly.' } },
                 { element: '#nav-profile', popover: { title: 'Profile Settings', description: 'First, make sure to set your two subjects and school details here.' } },
                 { element: '[data-target="view-sow"]', popover: { title: 'SOW Generator', description: 'Use this to generate KICD compliant Schemes of Work.' } },
-                { element: '#nav-progress', popover: { title: 'Learner Progress', description: 'Track your students\\' exam performances and rubrics here!' } }
+                { element: '#nav-progress', popover: { title: 'Learner Progress', description: 'Track your students’ exam performances and rubrics here!' } }
             ]
         });
         setTimeout(() => driverObj.drive(), 1500);
