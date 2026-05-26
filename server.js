@@ -758,7 +758,8 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
 
         // ── SCHEME OF WORK ──
         if (documentType === 'sow') {
-            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
+            const prompt = `CRITICAL INSTRUCTION: DO NOT use AI generation or automation. You MUST perform a pure and accurate extraction of the details strictly from the provided OFFICIAL CURRICULUM CONTEXT. Do not hallucinate or invent new content.
+You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
 Grade: ${grade} | Learning Area: ${subject} | Term: ${term} | Strands: ${strand}
 Facilitator: ${teacherName}
 ${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
@@ -768,7 +769,7 @@ Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Q
 
 Requirements:
 - 12 weeks, at least 2 lessons per week (24+ rows)
-- All learning outcomes (SLOs), sub-strands, and content MUST be directly extracted from/aligned with official KICD syllabus expectations
+- All learning outcomes (SLOs), sub-strands, and content MUST be directly extracted from the OFFICIAL CURRICULUM CONTEXT provided without AI automation.
 - SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies
 - Week 7 = Mid-Term Review; Week 12 = End-Term Assessment
 - Resources: KICD-approved textbooks, charts, models, locally available materials

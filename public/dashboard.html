@@ -119,7 +119,14 @@
 
                     <!-- SOW INPUTS FORM -->
                     <div id="sow-inputs-form">
-                        <div class="input-grid" style="margin-top:20px;">
+                        <div class="input-group" style="margin-top:20px; margin-bottom:14px; padding: 10px; background: rgba(124,107,255,0.05); border-radius: 8px; border: 1px dashed var(--accent);">
+                            <label style="color:var(--accent); font-weight:bold;">1. Upload Curriculum Design (Optional, PDF/TXT)</label>
+                            <input type="file" id="sow-curriculum" accept=".pdf,.txt">
+                            <p style="font-size:11px; color:var(--muted); margin-top:4px;">Upload your curriculum to strictly extract details from it instead of using AI generation.</p>
+                            <button class="btn-primary" style="margin-top:10px; background:#2b579a; font-size:12px; padding:6px 12px;" onclick="uploadCurriculum()">📤 Upload & Extract</button>
+                            <p id="curriculum-msg" style="display:none; color:var(--accent2); margin-top:5px; font-size:12px;">✅ Curriculum Details Extracted Successfully</p>
+                        </div>
+                        <div class="input-grid">
                             <div class="input-group">
                                 <label>Grade Level</label>
                                 <select id="gradeSelect-sow" onchange="updateTerms('sow')">
@@ -558,14 +565,7 @@
                     </div>
                     <button class="btn-generate" style="margin-top:20px;" onclick="saveProfile()">💾 Save Profile</button>
                     <p id="profile-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Profile Updated</p>
-                    <div class="divider" style="margin:20px 0;"></div>
-                    <div class="input-group">
-                        <label>Upload Curriculum Design (PDF/TXT) for your Subjects</label>
-                        <input type="file" id="profile-curriculum" accept=".pdf,.txt">
-                        <p style="font-size:11px; color:var(--muted); margin-top:4px;">This file will be used to highly personalize your generated documents.</p>
-                    </div>
-                    <button class="btn-primary" style="margin-top:10px; background:#2b579a;" onclick="uploadCurriculum()">📤 Upload Curriculum</button>
-                    <p id="curriculum-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Curriculum Uploaded Successfully</p>
+                    <p id="profile-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Profile Updated</p>
                 </div>
             </section>
 

@@ -209,8 +209,10 @@ function toggleGenType(type) {
         
         const guideBtn = document.getElementById('btn-generate-guide');
         const lessonNumGroup = document.getElementById('lp-lesson-number-group');
+        const generateBtn = document.getElementById('btn-generate-doc');
         if (guideBtn) guideBtn.style.display = 'none';
         if (lessonNumGroup) lessonNumGroup.style.display = 'none';
+        if (generateBtn) generateBtn.innerText = '⚡ Generate SOW';
     } else {
         document.getElementById('sow-inputs-form').style.display = 'none';
         document.getElementById('plan-inputs-form').style.display = 'block';
@@ -218,15 +220,18 @@ function toggleGenType(type) {
         const guideBtn = document.getElementById('btn-generate-guide');
         const lessonNumGroup = document.getElementById('lp-lesson-number-group');
         const standardFields = document.getElementById('lp-standard-fields');
+        const generateBtn = document.getElementById('btn-generate-doc');
 
         if (hasSow) {
             if (guideBtn) guideBtn.style.display = 'block';
             if (lessonNumGroup) lessonNumGroup.style.display = 'block';
             if (standardFields) standardFields.style.display = 'none';
+            if (generateBtn) generateBtn.innerText = '⚡ Extract Lesson Plan (No AI)';
         } else {
             if (guideBtn) guideBtn.style.display = 'block';
             if (lessonNumGroup) lessonNumGroup.style.display = 'none';
             if (standardFields) standardFields.style.display = 'block';
+            if (generateBtn) generateBtn.innerText = '⚡ Generate Lesson Plan';
         }
     }
 }
@@ -785,8 +790,8 @@ async function saveProfile() {
 
 async function uploadCurriculum() {
     try {
-        const fileInput = document.getElementById('profile-curriculum');
-        if (!fileInput.files.length) return alert("Please select a file first.");
+        const fileInput = document.getElementById('sow-curriculum') || document.getElementById('profile-curriculum');
+        if (!fileInput || !fileInput.files.length) return alert("Please select a file first.");
 
         const file = fileInput.files[0];
         const formData = new FormData();
