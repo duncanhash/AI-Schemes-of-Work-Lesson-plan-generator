@@ -224,7 +224,7 @@ function toggleGenType(type) {
             if (lessonNumGroup) lessonNumGroup.style.display = 'block';
             if (standardFields) standardFields.style.display = 'none';
         } else {
-            if (guideBtn) guideBtn.style.display = 'none';
+            if (guideBtn) guideBtn.style.display = 'block';
             if (lessonNumGroup) lessonNumGroup.style.display = 'none';
             if (standardFields) standardFields.style.display = 'block';
         }
@@ -957,7 +957,7 @@ function loadSavedSowFields() {
     if (!select.value) {
         if (lessonNumGroup) lessonNumGroup.style.display = 'none';
         if (standardFields) standardFields.style.display = 'block';
-        if (guideBtn) guideBtn.style.display = 'none';
+        if (guideBtn) guideBtn.style.display = 'block';
         return;
     }
 
@@ -991,19 +991,26 @@ function loadSavedSowFields() {
 async function generateTeacherGuideNotes() {
     try {
         const select = document.getElementById('saved-sow-select');
-        if (!select || !select.value) return alert("Please select a Scheme of Work first.");
-
-        const lessonNumber = parseInt(document.getElementById('lp-lesson-number').value) || 1;
-        const payload = {
+        let payload = {
             documentType: 'notes',
-            sowId: select.value,
-            lessonNumber: lessonNumber,
             extraInstructions: document.getElementById('extra-sow').value,
             teacherName: document.getElementById('profile-teacher').value || 'Facilitator',
             schoolName: document.getElementById('profile-school').value || 'Institution'
         };
 
-        showProgress(25, "Analysing Scheme of Work lesson...");
+        if (select && select.value) {
+            payload.sowId = select.value;
+            payload.lessonNumber = parseInt(document.getElementById('lp-lesson-number').value) || 1;
+        } else {
+            payload.grade = document.getElementById('gradeSelect-lp').value;
+            payload.term = document.getElementById('termSelect-lp').value;
+            payload.subject = document.getElementById('lp-subject').value;
+            payload.strand = document.getElementById('lp-strand').value;
+            payload.lessonNumber = 1;
+            if (!payload.subject || !payload.strand) return alert("Subject and Strands are required.");
+        }
+
+        showProgress(25, "Analysing lesson details...");
         setTimeout(() => showProgress(60, "Generating pedagogical guide..."), 1200);
 
         const res = await fetch('/api/generate', {
