@@ -8,3 +8,4 @@ scratch/
 .DS_Store
 dist/
 build/
+uploads/

@@ -44,11 +44,14 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 
+let userProfileCache = null;
+
 async function populateProfileFields() {
     try {
         const res = await fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } });
         if (res.status === 401 || res.status === 403) return logout();
         const profile = await res.json();
+        userProfileCache = profile;
 
         const pTeacher = document.getElementById('profile-teacher');
         const pSchool = document.getElementById('profile-school');
@@ -78,6 +81,13 @@ async function populateProfileFields() {
 
         // Initialize Dual Workspace
         initWorkspaceSelector(profile);
+
+        // Toggle generator form based on whether active workspace has a curriculum uploaded
+        const activeText = activeSubjectNum === 2 ? (profile.curriculumText2 || profile.curriculumText) : (profile.curriculumText1 || profile.curriculumText);
+        const genForm = document.getElementById('curriculum-generator-form');
+        if (genForm) {
+            genForm.style.display = activeText ? 'block' : 'none';
+        }
     } catch (e) { console.error("Profile load error:", e); }
 }
 
@@ -159,14 +169,45 @@ function updateTerms(context) {
 }
 
 // ── SOW / LP Modes ──
-let outputMode = 'template';
-function setOutputMode(mode) {
-    outputMode = mode;
-    document.getElementById('btn-template-sow').classList.toggle('active', mode === 'template');
-    document.getElementById('btn-ai-sow').classList.toggle('active', mode === 'ai');
-    document.getElementById('sow-extra-card').style.display = mode === 'ai' ? 'block' : 'none';
-    document.getElementById('sow-template-card').style.display = mode === 'template' ? 'block' : 'none';
+function setSowMode(mode) {
+    const panels = ['upload', 'template', 'ai'];
+    panels.forEach(m => {
+        const p = document.getElementById(`sow-panel-${m}`);
+        if (p) p.style.display = m === mode ? 'block' : 'none';
+    });
+
+    const btns = {
+        upload: 'btn-upload-sow',
+        template: 'btn-template-sow',
+        ai: 'btn-ai-sow'
+    };
+
+    Object.keys(btns).forEach(key => {
+        const btn = document.getElementById(btns[key]);
+        if (btn) btn.classList.toggle('active', key === mode);
+    });
 }
+window.setSowMode = setSowMode;
+
+function setLpMode(mode) {
+    const panels = ['library', 'template', 'ai'];
+    panels.forEach(m => {
+        const p = document.getElementById(`lp-panel-${m}`);
+        if (p) p.style.display = m === mode ? 'block' : 'none';
+    });
+
+    const btns = {
+        library: 'btn-library-lp',
+        template: 'btn-template-lp',
+        ai: 'btn-ai-lp'
+    };
+
+    Object.keys(btns).forEach(key => {
+        const btn = document.getElementById(btns[key]);
+        if (btn) btn.classList.toggle('active', key === mode);
+    });
+}
+window.setLpMode = setLpMode;
 
 // ── Fetch Strands for Range Selection ──
 async function fetchStrandsDropdown() {
@@ -200,41 +241,67 @@ async function fetchStrandsDropdown() {
 window.fetchStrandsDropdown = fetchStrandsDropdown;
 
 function toggleGenType(type) {
+    const isSow = type === 'sow';
+
+    // Show/hide mode selectors
+    const sowModeToggle = document.getElementById('sow-mode-toggle');
+    const lpModeToggle = document.getElementById('lp-mode-toggle');
+    if (sowModeToggle) sowModeToggle.style.display = isSow ? 'flex' : 'none';
+    if (lpModeToggle) lpModeToggle.style.display = isSow ? 'none' : 'flex';
+
+    // Hide all panels first
+    const sowPanels = ['upload', 'template', 'ai'];
+    const lpPanels = ['library', 'template', 'ai'];
+
+    sowPanels.forEach(m => {
+        const p = document.getElementById(`sow-panel-${m}`);
+        if (p) p.style.display = 'none';
+    });
+
+    lpPanels.forEach(m => {
+        const p = document.getElementById(`lp-panel-${m}`);
+        if (p) p.style.display = 'none';
+    });
+
+    // Show active panel based on the active tab button
+    if (isSow) {
+        if (document.getElementById('btn-upload-sow') && document.getElementById('btn-upload-sow').classList.contains('active')) {
+            document.getElementById('sow-panel-upload').style.display = 'block';
+        } else if (document.getElementById('btn-ai-sow') && document.getElementById('btn-ai-sow').classList.contains('active')) {
+            document.getElementById('sow-panel-ai').style.display = 'block';
+        } else {
+            document.getElementById('sow-panel-template').style.display = 'block';
+        }
+    } else {
+        if (document.getElementById('btn-template-lp') && document.getElementById('btn-template-lp').classList.contains('active')) {
+            document.getElementById('lp-panel-template').style.display = 'block';
+        } else if (document.getElementById('btn-ai-lp') && document.getElementById('btn-ai-lp').classList.contains('active')) {
+            document.getElementById('lp-panel-ai').style.display = 'block';
+        } else {
+            document.getElementById('lp-panel-library').style.display = 'block';
+        }
+    }
+
     const select = document.getElementById('saved-sow-select');
     const hasSow = select && select.value;
+    const generateBtn = document.getElementById('btn-generate-doc');
+    const guideBtn = document.getElementById('btn-generate-guide');
+    const lessonNumGroup = document.getElementById('lp-lesson-number-group');
 
-    if (type === 'sow') {
-        document.getElementById('sow-inputs-form').style.display = 'block';
-        document.getElementById('plan-inputs-form').style.display = 'none';
-        
-        const guideBtn = document.getElementById('btn-generate-guide');
-        const lessonNumGroup = document.getElementById('lp-lesson-number-group');
-        const generateBtn = document.getElementById('btn-generate-doc');
-        if (guideBtn) guideBtn.style.display = 'none';
-        if (lessonNumGroup) lessonNumGroup.style.display = 'none';
-        if (generateBtn) generateBtn.innerText = '⚡ Generate SOW';
-    } else {
-        document.getElementById('sow-inputs-form').style.display = 'none';
-        document.getElementById('plan-inputs-form').style.display = 'block';
-        
-        const guideBtn = document.getElementById('btn-generate-guide');
-        const lessonNumGroup = document.getElementById('lp-lesson-number-group');
-        const standardFields = document.getElementById('lp-standard-fields');
-        const generateBtn = document.getElementById('btn-generate-doc');
-
-        if (hasSow) {
+    if (!isSow) {
+        const isLpLibraryMode = document.getElementById('btn-library-lp') && document.getElementById('btn-library-lp').classList.contains('active');
+        if (isLpLibraryMode && hasSow) {
             if (guideBtn) guideBtn.style.display = 'block';
             if (lessonNumGroup) lessonNumGroup.style.display = 'block';
-            if (standardFields) standardFields.style.display = 'none';
             if (generateBtn) generateBtn.innerText = '⚡ Extract Lesson Plan (No AI)';
         } else {
             if (guideBtn) guideBtn.style.display = 'block';
             if (lessonNumGroup) lessonNumGroup.style.display = 'none';
-            if (standardFields) standardFields.style.display = 'block';
             if (generateBtn) generateBtn.innerText = '⚡ Generate Lesson Plan';
         }
     }
 }
+window.toggleGenType = toggleGenType;
 
 // ── AI Suggestions ──
 async function suggestField(inputId, fieldType, context) {
@@ -267,7 +334,7 @@ async function suggestField(inputId, fieldType, context) {
         const res = await fetch('/api/suggest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ field: fieldType, grade, subject, strand, term })
+            body: JSON.stringify({ field: fieldType, grade, subject, strand, term, activeWorkspace: activeSubjectNum })
         });
         const data = await res.json();
         const suggestionText = data.suggestion || "No suggestion found.";
@@ -308,8 +375,9 @@ async function generateDocument(isTemplate = false) {
                 payload.extraInstructions += `\nInclude these holidays/breaks: ${holidays}`;
             }
         } else {
+            const isLpLibraryMode = document.getElementById('btn-library-lp') && document.getElementById('btn-library-lp').classList.contains('active');
             const select = document.getElementById('saved-sow-select');
-            if (select && select.value) {
+            if (isLpLibraryMode && select && select.value) {
                 payload.sowId = select.value;
                 payload.lessonNumber = parseInt(document.getElementById('lp-lesson-number').value) || 1;
                 payload.subject = document.getElementById('lp-subject').value;
@@ -324,14 +392,16 @@ async function generateDocument(isTemplate = false) {
                 payload.competencies = document.getElementById('lp-competencies-input').value;
                 payload.extendedActivity = document.getElementById('lp-extended-input').value;
             }
-            payload.extraInstructions = document.getElementById('extra-sow').value;
+            payload.extraInstructions = document.getElementById('extra-lp').value || '';
         }
 
-        if (!payload.sowId && (!payload.subject || !payload.strand)) return alert("Subject and Strands are required.");
+        if (!isTemplate && !payload.sowId && (!payload.subject || !payload.strand)) return alert("Subject and Strands are required.");
 
         showProgress(20, "Referring to KICD format...");
         setTimeout(() => showProgress(50, "Mapping learning outcomes..."), 1000);
         setTimeout(() => showProgress(80, "Finalizing document structure..."), 2000);
+
+        payload.activeWorkspace = activeSubjectNum;
 
         const res = await fetch('/api/generate', {
             method: 'POST',
@@ -371,6 +441,72 @@ async function generateDocument(isTemplate = false) {
         hideProgress();
     }
 }
+
+async function generateSowFromCurriculum() {
+    try {
+        const grade = document.getElementById('gradeSelect-curriculum').value;
+        const term = document.getElementById('termSelect-curriculum').value;
+        const subject = document.getElementById('subject-curriculum').value;
+        const strandRange = document.getElementById('strandRange-curriculum').value;
+        const previousProgress = document.getElementById('previousProgress-curriculum').value;
+        const holidays = document.getElementById('holidays-curriculum').value;
+        let extraInstructions = document.getElementById('extra-curriculum').value || '';
+
+        if (!subject || !strandRange) {
+            return alert("Subject and Strand Range are required to generate SOW.");
+        }
+
+        showProgress(20, "Referring to curriculum text...");
+        setTimeout(() => showProgress(50, "Aligning strand range..."), 1000);
+        setTimeout(() => showProgress(80, "Structuring termly SOW..."), 2000);
+
+        const payload = {
+            documentType: 'sow',
+            grade,
+            term,
+            subject,
+            strand: strandRange,
+            previousProgress,
+            extraInstructions,
+            holidays,
+            activeWorkspace: activeSubjectNum
+        };
+
+        const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.status === 401 || res.status === 403) return logout();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Generation failed');
+
+        showProgress(100, "Done!");
+        setTimeout(() => {
+            displayOutput(data.html);
+            hideProgress();
+
+            lastGeneratedSow = {
+                grade: payload.grade,
+                term: payload.term,
+                subject: payload.subject,
+                strands: payload.strand,
+                html: data.html
+            };
+
+            const saveBtn = document.getElementById('btn-save-sow-lib');
+            const pushLpBtn = document.getElementById('btn-push-lp');
+            if (saveBtn) saveBtn.style.display = 'inline-block';
+            if (pushLpBtn) pushLpBtn.style.display = 'inline-block';
+        }, 500);
+
+    } catch (err) {
+        alert("Extraction Error: " + err.message);
+        hideProgress();
+    }
+}
+window.generateSowFromCurriculum = generateSowFromCurriculum;
 
 function downloadTemplate() { generateDocument(true); }
 
@@ -478,8 +614,29 @@ async function handleAssessmentGeneration() {
     }
 }
 
-// ── Community Chat ──
+// ── Community Chat (Real-time Socket.io) ──
 let currentChatChannel = 'staff';
+let chatSocket = null;
+
+function initChatSocket() {
+    if (chatSocket) return; // Already connected
+    chatSocket = io();
+
+    chatSocket.on('connect', () => {
+        console.log('🛰️  Chat socket connected:', chatSocket.id);
+        chatSocket.emit('joinChannel', currentChatChannel);
+    });
+
+    // Listen for messages on any channel
+    ['staff', 'parent-community'].forEach(ch => {
+        chatSocket.on(`chat:${ch}`, (msg) => {
+            if (ch === currentChatChannel) appendChatMessage(msg);
+        });
+    });
+
+    chatSocket.on('disconnect', () => console.warn('Chat socket disconnected'));
+}
+
 function setChatChannel(chan) {
     currentChatChannel = chan;
     const staffBtn = document.getElementById('btn-chan-staff');
@@ -488,55 +645,79 @@ function setChatChannel(chan) {
     if (staffBtn) staffBtn.classList.toggle('active', chan === 'staff');
     if (parentsBtn) parentsBtn.classList.toggle('active', chan === 'parent-community');
 
-    // Update Premium UI Header
+    // Update header
     const title = document.getElementById('current-chat-title');
     const avatar = document.getElementById('current-chat-avatar');
+    const statusEl = document.getElementById('chat-online-status');
     if (title && avatar) {
         title.innerText = chan === 'staff' ? 'Staff Room' : 'Parents Hub';
         avatar.innerText = chan === 'staff' ? '👨‍🏫' : '👪';
-        avatar.style.background = chan === 'staff' ? 'linear-gradient(135deg, #7c6bff, #5643e6)' : 'linear-gradient(135deg, #00d4aa, #00a388)';
+        avatar.style.background = chan === 'staff'
+            ? 'linear-gradient(135deg, #7c6bff, #5643e6)'
+            : 'linear-gradient(135deg, #00d4aa, #00a388)';
     }
+    if (statusEl) statusEl.textContent = chan === 'staff' ? 'Staff & Faculty' : 'Parents Community';
 
+    if (chatSocket) chatSocket.emit('joinChannel', chan);
     loadChat();
+}
+window.setChatChannel = setChatChannel;
+
+function buildChatBubble(m) {
+    const isMine = m.sender === userEmail;
+    const isBot = m.sender && (m.sender.includes('Bot') || m.sender.includes('🤖'));
+    const sidebarImg = document.getElementById('sidebar-avatar-img');
+    const sidebarInitials = document.getElementById('sidebar-avatar-initials');
+    const myPic = sidebarImg && sidebarImg.style.display !== 'none' ? sidebarImg.src : null;
+    const myInitials = sidebarInitials ? sidebarInitials.textContent : '?';
+    const senderLabel = isBot ? m.sender : isMine ? 'You' : m.sender.split('@')[0];
+
+    const avatarHtml = isBot
+        ? `<div class="chat-avatar" style="background:linear-gradient(135deg,#00d4aa,#00a388);font-size:18px;">🤖</div>`
+        : isMine
+            ? (myPic
+                ? `<div class="chat-avatar"><img src="${myPic}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>`
+                : `<div class="chat-avatar" style="background:linear-gradient(135deg,var(--accent),#5643e6);">${myInitials}</div>`)
+            : `<div class="chat-avatar" style="background:rgba(255,255,255,0.1);">${m.sender ? m.sender[0].toUpperCase() : '?'}</div>`;
+
+    return `
+        <div class="chat-msg ${isMine ? 'sent' : 'received'}" data-id="${m._id || ''}">
+            ${!isMine ? avatarHtml : ''}
+            <div class="chat-bubble">
+                <span class="chat-sender">${senderLabel}</span>
+                <span>${m.text}</span>
+                <span class="chat-time">${m.time || ''}</span>
+            </div>
+            ${isMine ? avatarHtml : ''}
+        </div>`;
+}
+
+function appendChatMessage(msg) {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    const placeholder = container.querySelector('.chat-info');
+    if (placeholder) placeholder.remove();
+    container.insertAdjacentHTML('beforeend', buildChatBubble(msg));
+    container.scrollTop = container.scrollHeight;
 }
 
 async function loadChat() {
     try {
+        const container = document.getElementById('chat-messages');
+        if (!container) return;
+        container.innerHTML = `<div class="chat-info" style="text-align:center;padding:20px;opacity:0.5;">Loading messages...</div>`;
+
         const res = await fetch(`/api/chat/${currentChatChannel}`, { headers: { 'Authorization': `Bearer ${token}` } });
         if (res.status === 401 || res.status === 403) return logout();
         const messages = await res.json();
-        const container = document.getElementById('chat-messages');
-        if (!container) return;
 
-        // Get current user's profile picture for sent messages
-        const sidebarImg = document.getElementById('sidebar-avatar-img');
-        const sidebarInitials = document.getElementById('sidebar-avatar-initials');
-        const myPic = sidebarImg && sidebarImg.style.display !== 'none' ? sidebarImg.src : null;
-        const myInitials = sidebarInitials ? sidebarInitials.textContent : '👤';
-
-        container.innerHTML = messages.map(m => {
-            const isMine = m.sender === userEmail;
-            const isBot = m.sender && m.sender.includes('Bot');
-            const avatarContent = isBot 
-                ? `<div class="chat-avatar" style="background:linear-gradient(135deg,#00d4aa,#00a388);">🤖</div>`
-                : isMine 
-                    ? (myPic ? `<div class="chat-avatar"><img src="${myPic}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>` 
-                             : `<div class="chat-avatar" style="background:linear-gradient(135deg,var(--accent),#5643e6);">${myInitials}</div>`)
-                    : `<div class="chat-avatar" style="background:rgba(255,255,255,0.08);">${m.sender ? m.sender[0].toUpperCase() : '?'}</div>`;
-            return `
-                <div class="chat-msg ${isMine ? 'sent' : 'received'}">
-                    ${!isMine ? avatarContent : ''}
-                    <div class="chat-bubble">
-                        <span class="chat-sender">${isMine ? 'You' : m.sender}</span>
-                        ${m.text}
-                        <span class="chat-time">${m.time}</span>
-                    </div>
-                    ${isMine ? avatarContent : ''}
-                </div>
-            `;
-        }).join('');
+        if (!messages.length) {
+            container.innerHTML = `<div class="chat-info" style="text-align:center;padding:40px;opacity:0.4;">No messages yet. Start the conversation! 👋</div>`;
+            return;
+        }
+        container.innerHTML = messages.map(buildChatBubble).join('');
         container.scrollTop = container.scrollHeight;
-    } catch (err) { console.error("Chat error:", err); }
+    } catch (err) { console.error("Chat load error:", err); }
 }
 
 async function sendChatMessage() {
@@ -545,19 +726,39 @@ async function sendChatMessage() {
         const text = input.value.trim();
         if (!text) return;
         input.value = '';
-        await fetch('/api/chat', {
+
+        // Optimistically add message to UI immediately
+        const optimistic = {
+            sender: userEmail,
+            text,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            _id: 'opt-' + Date.now()
+        };
+        appendChatMessage(optimistic);
+
+        // Send via REST (server will broadcast to all sockets)
+        await fetch(`/api/chat/${currentChatChannel}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ text, channel: currentChatChannel })
+            body: JSON.stringify({ text })
         });
-        loadChat();
     } catch (e) { console.error("Send error:", e); }
 }
+window.sendChatMessage = sendChatMessage;
 
-setInterval(() => {
-    const chatView = document.getElementById('view-chat');
-    if (chatView && chatView.classList.contains('active')) loadChat();
-}, 4000);
+// Initialize socket when chat view becomes active
+document.addEventListener('DOMContentLoaded', () => {
+    const chatNavBtn = document.querySelector('[onclick*="view-chat"], [onclick*="chat"]');
+    const observer = new MutationObserver(() => {
+        const chatView = document.getElementById('view-chat');
+        if (chatView && chatView.classList.contains('active')) {
+            initChatSocket();
+            loadChat();
+        }
+    });
+    const viewsContainer = document.querySelector('.main-content');
+    if (viewsContainer) observer.observe(viewsContainer, { subtree: true, attributeFilter: ['class'] });
+});
 
 // ── Portfolio ──
 async function addPortfolioEntry() {
@@ -796,8 +997,9 @@ async function uploadCurriculum() {
         const file = fileInput.files[0];
         const formData = new FormData();
         formData.append('curriculum', file);
+        formData.append('workspace', activeSubjectNum.toString());
 
-        showProgress(50, "Uploading & Processing Curriculum...");
+        showProgress(50, "Uploading & Extracting Curriculum...");
 
         const res = await fetch('/api/profile/curriculum', {
             method: 'POST',
@@ -807,12 +1009,50 @@ async function uploadCurriculum() {
 
         if (res.ok) {
             hideProgress();
+            const data = await res.json();
+
+            // Refresh userProfileCache
+            await populateProfileFields();
+
+            // Reveal the termly generator form instantly
+            const genForm = document.getElementById('curriculum-generator-form');
+            if (genForm) genForm.style.display = 'block';
+
             const msg = document.getElementById('curriculum-msg');
             if (msg) {
                 msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 3000);
+                setTimeout(() => msg.style.display = 'none', 4000);
             }
+
+            // Show extracted text preview
+            if (data.preview) {
+                const preview = document.getElementById('curriculum-preview');
+                const previewText = document.getElementById('curriculum-preview-text');
+                const wsLabel = document.getElementById('curriculum-ws-label');
+                if (preview && previewText) {
+                    previewText.textContent = data.preview;
+                    if (wsLabel) wsLabel.textContent = data.workspace || activeSubjectNum;
+                    preview.style.display = 'block';
+                }
+            }
+
+            // Change button to toggle the preview panel
+            const btn = document.getElementById('upload-btn');
+            if (btn) {
+                btn.innerHTML = '📋 View Extracted SOW';
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const p = document.getElementById('curriculum-preview');
+                    if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
+                };
+            }
+            
+            const pushBtn = document.getElementById('push-lp-btn');
+            if (pushBtn) pushBtn.style.display = 'inline-block';
+
             fileInput.value = '';
+            const disp = document.getElementById('file-name-display');
+            if (disp) disp.style.display = 'none';
         } else {
             const err = await res.json();
             throw new Error(err.error || "Upload failed");
@@ -1080,6 +1320,21 @@ async function saveSOWToLibrary() {
     }
 }
 
+async function clearSowLibrary() {
+    if (!confirm('Clear ALL saved SOWs from your library? This cannot be undone.')) return;
+    try {
+        const res = await fetch('/api/sow/all', { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        if (res.ok) {
+            alert('\u2705 SOW Library cleared!');
+            loadSavedSowDropdown();
+        } else {
+            const err = await res.json();
+            alert('Failed: ' + err.error);
+        }
+    } catch (e) { alert('Failed to clear library: ' + e.message); }
+}
+window.clearSowLibrary = clearSowLibrary;
+
 async function pushSowToLessonPlan() {
     const saveBtn = document.getElementById('btn-save-sow-lib');
     if (saveBtn && saveBtn.style.display !== 'none') {
@@ -1098,6 +1353,12 @@ async function pushSowToLessonPlan() {
     }, 500);
 }
 window.pushSowToLessonPlan = pushSowToLessonPlan;
+
+function switchToLessonPlan() {
+    document.getElementById('r-plan').click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+window.switchToLessonPlan = switchToLessonPlan;
 
 // ── DUAL SUBJECT WORKSPACE SELECTOR SYSTEM ──
 let userSubject1 = '';
@@ -1175,11 +1436,13 @@ function selectWorkspaceSubject(num, showNotification = true) {
     const rowSub = document.getElementById('row-subject');
     const assessGradeSub = document.getElementById('assess-grade-subject');
     const projSub = document.getElementById('proj-subject');
+    const curriculumSub = document.getElementById('subject-curriculum');
 
     if (sowSub) sowSub.value = activeSubject;
     if (lpSub) lpSub.value = activeSubject;
     if (rowSub) rowSub.value = activeSubject;
     if (projSub) projSub.value = activeSubject;
+    if (curriculumSub) curriculumSub.value = activeSubject;
 
     if (assessGradeSub) {
         const currentVal = assessGradeSub.value || '';
@@ -1191,6 +1454,15 @@ function selectWorkspaceSubject(num, showNotification = true) {
         }
     }
 
+    // Dynamic SOW termly generator form display based on cached curriculum text availability
+    if (userProfileCache) {
+        const activeText = num === 2 ? (userProfileCache.curriculumText2 || userProfileCache.curriculumText) : (userProfileCache.curriculumText1 || userProfileCache.curriculumText);
+        const genForm = document.getElementById('curriculum-generator-form');
+        if (genForm) {
+            genForm.style.display = activeText ? 'block' : 'none';
+        }
+    }
+
     if (showNotification) {
         console.log(`Switched to active subject: ${activeSubject}`);
     }
@@ -1198,53 +1470,85 @@ function selectWorkspaceSubject(num, showNotification = true) {
 window.selectWorkspaceSubject = selectWorkspaceSubject;
 
 // ── ONBOARDING WALKTHROUGH ──
-function initWalkthrough() {
+function initWalkthrough(force = false) {
     const loginCount = parseInt(localStorage.getItem('pedagogy_login_count') || '0');
-    localStorage.setItem('pedagogy_login_count', (loginCount + 1).toString());
+    if (!force) localStorage.setItem('pedagogy_login_count', (loginCount + 1).toString());
 
-    if (loginCount < 2 && window.driver) {
-        const driverObj = window.driver.driver({
+    if ((force || loginCount < 2) && window.driver) {
+        try {
+            const driverFunc = window.driver.driver || window.driver;
+            const driverObj = driverFunc({
             showProgress: true,
             steps: [
-                { element: '#subject-workspace-selector', popover: { title: 'Workspace Switcher', description: 'Click here to switch between your two assigned teaching subjects instantly.' } },
-                { element: '#nav-profile', popover: { title: 'Profile Settings', description: 'First, make sure to set your two subjects and school details here.' } },
-                { element: '[data-target="view-sow"]', popover: { title: 'SOW Generator', description: 'Use this to generate KICD compliant Schemes of Work.' } },
-                { element: '#nav-progress', popover: { title: 'Learner Progress', description: 'Track your students’ exam performances and rubrics here!' } }
+                { element: '#subject-workspace-selector', popover: { title: 'Workspace Switcher', description: 'Switch between your teaching subjects. Each workspace remembers its own uploaded curriculum.' } },
+                { element: '#curriculum-upload-zone', popover: { title: 'Curriculum Upload', description: 'Upload a PDF or TXT of the curriculum here. We will extract the data to power the AI SOW generator.' } },
+                { element: '#nav-profile', popover: { title: 'Profile Settings', description: 'Configure your school details, classes, and subjects.' } },
+                { element: '[data-target="view-sow"]', popover: { title: 'SOW Generator', description: 'Generate highly accurate Schemes of Work using your uploaded curriculum.' } },
+                { element: '[data-target="view-plan"]', popover: { title: 'Lesson Planning', description: 'Push your SOW here to generate detailed daily Lesson Plans and Teacher Guidance Notes.' } },
+                { element: '#nav-progress', popover: { title: 'Learner Progress', description: 'Track CBC summative and formative assessments.' } }
             ]
         });
         setTimeout(() => driverObj.drive(), 1500);
+        } catch (e) { console.warn('Driver walkthrough error:', e); }
     }
 }
 
 // ── LEARNER PROGRESS ──
-async function saveProgressRecord() {
-    const data = {
-        studentName: document.getElementById('prog-student').value,
-        term: document.getElementById('prog-term').value,
-        mathScore: document.getElementById('prog-math').value,
-        englishScore: document.getElementById('prog-eng').value,
-        scienceScore: document.getElementById('prog-sci').value,
-        rubric: document.getElementById('prog-rubric').value,
-        remarks: document.getElementById('prog-remarks').value,
-        sharedWith: document.getElementById('prog-parent-email').value
-    };
+function addProgressRow() {
+    const tbody = document.getElementById('progress-tbody');
+    if (!tbody) return;
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = '1px solid var(--border)';
+    tr.innerHTML = `
+        <td style="padding:4px; border-right:2px solid var(--border);"><input type="text" class="prog-name" placeholder="Name" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+        <td style="padding:4px; background:rgba(124,107,255,0.05);"><input type="text" class="prog-att" placeholder="e.g. 95%" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+        <td style="padding:4px; background:rgba(124,107,255,0.05);"><input type="text" class="prog-ass" placeholder="e.g. Good" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+        <td style="padding:4px; border-right:2px solid var(--border); background:rgba(124,107,255,0.05);"><input type="text" class="prog-grp" placeholder="e.g. Active" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+        <td style="padding:4px; background:rgba(0,212,170,0.05);"><input type="text" class="prog-cat" placeholder="Score" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+        <td style="padding:4px; background:rgba(0,212,170,0.05);"><input type="text" class="prog-pres" placeholder="Score" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+        <td style="padding:4px; background:rgba(0,212,170,0.05);"><input type="text" class="prog-proj" placeholder="Score" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+        <td style="padding:4px; background:rgba(0,212,170,0.05);"><input type="text" class="prog-oth" placeholder="Remarks" style="width:100%; padding:4px; border-radius:4px; border:1px solid var(--border); background:var(--bg); color:var(--text);"></td>
+    `;
+    tbody.appendChild(tr);
+}
+window.addProgressRow = addProgressRow;
+
+async function saveClassProgress() {
+    const term = document.getElementById('prog-term').value;
+    const sharedWith = document.getElementById('prog-parent-email').value;
+    const tbody = document.getElementById('progress-tbody');
+    const rows = tbody.querySelectorAll('tr');
+    const studentsData = [];
     
-    if (!data.studentName) return alert("Learner name is required.");
+    rows.forEach(tr => {
+        const name = tr.querySelector('.prog-name').value;
+        if(name.trim() !== '') {
+            studentsData.push({
+                name: name.trim(),
+                attendance: tr.querySelector('.prog-att').value,
+                assignments: tr.querySelector('.prog-ass').value,
+                groupwork: tr.querySelector('.prog-grp').value,
+                cat: tr.querySelector('.prog-cat').value,
+                presentation: tr.querySelector('.prog-pres').value,
+                project: tr.querySelector('.prog-proj').value,
+                other: tr.querySelector('.prog-oth').value
+            });
+        }
+    });
+    
+    if (studentsData.length === 0) return alert("Please enter at least one student record.");
     
     try {
         const res = await fetch('/api/progress', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(data)
+            body: JSON.stringify({ term, sharedWith, studentsData })
         });
         if (res.ok) {
-            alert("✅ Progress Record Saved successfully!");
-            document.getElementById('prog-student').value = '';
-            document.getElementById('prog-math').value = '';
-            document.getElementById('prog-eng').value = '';
-            document.getElementById('prog-sci').value = '';
-            document.getElementById('prog-remarks').value = '';
+            alert("✅ Class Progress Record Saved successfully!");
             document.getElementById('prog-parent-email').value = '';
+            tbody.innerHTML = '';
+            addProgressRow();
             loadProgressRecords();
         } else {
             const err = await res.json();
@@ -1252,7 +1556,7 @@ async function saveProgressRecord() {
         }
     } catch(e) { alert("Failed to save progress."); }
 }
-window.saveProgressRecord = saveProgressRecord;
+window.saveClassProgress = saveClassProgress;
 
 async function loadProgressRecords() {
     try {
@@ -1268,20 +1572,79 @@ async function loadProgressRecords() {
             return;
         }
         
-        container.innerHTML = records.map(r => `
-            <div class="card" style="padding:20px; margin-bottom:0;">
-                <h4 style="margin:0 0 10px; font-size:16px;">${r.studentName} <span style="font-size:12px; font-weight:normal; color:var(--muted);">(${r.term})</span></h4>
-                <div style="font-size:13px; margin-bottom:10px;">
-                    <strong>Math:</strong> ${r.mathScore || '-'}% &nbsp; 
-                    <strong>English:</strong> ${r.englishScore || '-'}% &nbsp; 
-                    <strong>Science:</strong> ${r.scienceScore || '-'}%
+        container.innerHTML = records.map(r => {
+            if (r.studentsData && r.studentsData.length > 0) {
+                // New Format
+                const rows = r.studentsData.map(s => `
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:4px;">${s.name}</td>
+                        <td style="padding:4px; color:var(--muted);">${s.attendance || '-'}</td>
+                        <td style="padding:4px; color:var(--muted);">${s.assignments || '-'}</td>
+                        <td style="padding:4px; color:var(--accent); font-weight:bold;">${s.cat || '-'}</td>
+                        <td style="padding:4px; color:var(--accent2);">${s.project || '-'}</td>
+                    </tr>
+                `).join('');
+                
+                return `
+                <div class="card" style="padding:20px; margin-bottom:0; width:100%; grid-column: 1/-1; max-width: 100%; overflow-x: auto;">
+                    <h4 style="margin:0 0 10px; font-size:16px;">Class Record <span style="font-size:12px; font-weight:normal; color:var(--muted);">(${r.term})</span></h4>
+                    <table style="width:100%; font-size:12px; text-align:left; border-collapse:collapse; min-width:500px;">
+                        <thead><tr style="background:rgba(124,107,255,0.05);"><th style="padding:6px;">Student</th><th style="padding:6px;">Attnd.</th><th style="padding:6px;">Assign.</th><th style="padding:6px;">CAT</th><th style="padding:6px;">Project</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    ${r.sharedWith ? `<div style="font-size:11px; margin-top:10px; color:#3b82f6;">Shared with: ${r.sharedWith}</div>` : ''}
                 </div>
-                <div style="font-size:13px; color:var(--accent2); margin-bottom:10px;"><strong>Level:</strong> ${r.rubric}</div>
-                <p style="font-size:12px; color:var(--muted); margin:0;">${r.remarks || 'No remarks.'}</p>
-                ${r.sharedWith ? `<div style="font-size:11px; margin-top:10px; color:#3b82f6;">Shared with: ${r.sharedWith}</div>` : ''}
-            </div>
-        `).join('');
+                `;
+            } else {
+                // Legacy Format
+                return `
+                <div class="card" style="padding:20px; margin-bottom:0;">
+                    <h4 style="margin:0 0 10px; font-size:16px;">${r.studentName} <span style="font-size:12px; font-weight:normal; color:var(--muted);">(${r.term})</span></h4>
+                    <div style="font-size:13px; margin-bottom:10px;">
+                        <strong>Math:</strong> ${r.mathScore || '-'}% &nbsp; 
+                        <strong>English:</strong> ${r.englishScore || '-'}% &nbsp; 
+                        <strong>Science:</strong> ${r.scienceScore || '-'}%
+                    </div>
+                    <div style="font-size:13px; color:var(--accent2); margin-bottom:10px;"><strong>Level:</strong> ${r.rubric}</div>
+                    <p style="font-size:12px; color:var(--muted); margin:0;">${r.remarks || 'No remarks.'}</p>
+                    ${r.sharedWith ? `<div style="font-size:11px; margin-top:10px; color:#3b82f6;">Shared with: ${r.sharedWith}</div>` : ''}
+                </div>
+                `;
+            }
+        }).join('');
     } catch(e) {}
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => { if(document.getElementById('progress-tbody')) addProgressRow(); }, 500);
+});
 window.loadProgressRecords = loadProgressRecords;
 
+window.updateFileName = function(input) {
+    const display = document.getElementById('file-name-display');
+    const btn = document.getElementById('upload-btn');
+    if (input.files && input.files[0]) {
+        display.textContent = 'Selected: ' + input.files[0].name;
+        display.style.display = 'block';
+        if (btn) {
+            btn.innerHTML = '✨ Extract SOW';
+            btn.style.background = 'linear-gradient(135deg, #00d4aa, #009688)';
+        }
+    } else {
+        display.style.display = 'none';
+        if (btn) {
+            btn.innerHTML = '📁 Browse File';
+            btn.style.background = 'linear-gradient(135deg, var(--accent), #5643e6)';
+        }
+    }
+};
+
+window.handleUploadBtnClick = function(btn) {
+    const fileInput = document.getElementById('sow-curriculum');
+    if (!fileInput) return;
+    if (!fileInput.files || !fileInput.files.length) {
+        fileInput.click();
+    } else {
+        uploadCurriculum();
+    }
+};

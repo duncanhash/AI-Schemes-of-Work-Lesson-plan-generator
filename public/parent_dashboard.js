@@ -132,33 +132,70 @@ async function loadParentProgress() {
     } catch(e) {}
 }
 
-// ── Parent Hub (Chat) ──
-let chatInterval;
-function startChatPolling() {
-    loadMessages();
-    chatInterval = setInterval(loadMessages, 3000);
+// ── Parent Hub (Chat) — Real-time Socket.io ──
+let chatSocket = null;
+
+function initParentChatSocket() {
+    if (chatSocket) return;
+    chatSocket = io();
+
+    chatSocket.on('connect', () => {
+        console.log('🛰️  Parent socket connected:', chatSocket.id);
+        chatSocket.emit('joinChannel', 'parent-community');
+    });
+
+    chatSocket.on('chat:parent-community', (msg) => {
+        appendParentMessage(msg);
+    });
+
+    chatSocket.on('disconnect', () => console.warn('Socket disconnected'));
 }
 
-function stopChatPolling() {
-    clearInterval(chatInterval);
+function buildParentBubble(msg) {
+    const isMine = msg.sender === currentParent.email;
+    const senderLabel = isMine ? 'You' : msg.sender.split('@')[0];
+    const avatarLetter = msg.sender ? msg.sender[0].toUpperCase() : '?';
+    const avatarStyle = isMine
+        ? 'background:linear-gradient(135deg,#00d4aa,#009e80);'
+        : 'background:rgba(255,255,255,0.12);';
+
+    return `
+        <div class="chat-msg ${isMine ? 'sent' : 'received'}">
+            ${!isMine ? `<div class="chat-avatar" style="${avatarStyle}">${avatarLetter}</div>` : ''}
+            <div class="chat-bubble">
+                <span class="chat-sender">${senderLabel}</span>
+                <span>${msg.text}</span>
+                <span class="chat-time">${msg.time || ''}</span>
+            </div>
+            ${isMine ? `<div class="chat-avatar" style="${avatarStyle}">${avatarLetter}</div>` : ''}
+        </div>`;
+}
+
+function appendParentMessage(msg) {
+    const chatBox = document.getElementById('chat-messages');
+    if (!chatBox) return;
+    const placeholder = chatBox.querySelector('.chat-info');
+    if (placeholder) placeholder.remove();
+    chatBox.insertAdjacentHTML('beforeend', buildParentBubble(msg));
+    chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 async function loadMessages() {
     try {
+        const chatBox = document.getElementById('chat-messages');
+        if (!chatBox) return;
+        chatBox.innerHTML = `<div class="chat-info" style="text-align:center;padding:20px;opacity:0.5;">Loading messages...</div>`;
+
         const res = await fetch('/api/chat/parent-community', {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('cbc_token')}` }
         });
         const messages = await res.json();
-        const chatBox = document.getElementById('chat-messages');
-        
-        chatBox.innerHTML = messages.map(msg => `
-            <div class="chat-msg ${msg.sender === currentParent.email ? 'sent' : 'received'}">
-                <div class="chat-sender">${msg.sender === currentParent.email ? 'You' : msg.sender.split('@')[0]}</div>
-                <div>${msg.text}</div>
-                <span class="chat-time">${msg.time}</span>
-            </div>
-        `).join('');
-        
+
+        if (!messages.length) {
+            chatBox.innerHTML = `<div class="chat-info" style="text-align:center;padding:40px;opacity:0.4;">No messages yet. Be the first to post! 👋</div>`;
+            return;
+        }
+        chatBox.innerHTML = messages.map(buildParentBubble).join('');
         chatBox.scrollTop = chatBox.scrollHeight;
     } catch (err) { console.error("Chat error:", err); }
 }
@@ -167,24 +204,46 @@ async function sendMessage() {
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
     if (!text) return;
+    input.value = '';
+
+    // Optimistic UI update
+    appendParentMessage({
+        sender: currentParent.email,
+        text,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
 
     try {
-        await fetch('/api/chat', {
+        await fetch('/api/chat/parent-community', {
             method: 'POST',
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${localStorage.getItem('cbc_token')}`
             },
-            body: JSON.stringify({ text, channel: 'parent-community' })
+            body: JSON.stringify({ text })
         });
-        input.value = '';
-        loadMessages();
     } catch (err) { console.error("Send error:", err); }
 }
 
-// ── Initialization ──
+function startChatPolling() {
+    initParentChatSocket();
+    loadMessages();
+}
+
+function stopChatPolling() {
+    // Socket stays alive, nothing to do
+}
+
+// Enter key support
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('parent-name').textContent = currentParent.name;
     document.getElementById('parent-email').textContent = currentParent.email;
     loadRecords();
+
+    const chatInput = document.getElementById('chatInput');
+    if (chatInput) {
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    }
 });

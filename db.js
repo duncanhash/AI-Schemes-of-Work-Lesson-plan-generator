@@ -74,7 +74,7 @@ if (USE_MONGO) {
     const userSchema = new mongoose.Schema({
         name: String, email: { type: String, unique: true }, password: { type: String, required: true },
         role: { type: String, default: 'teacher' }, otp: String, isVerified: { type: Boolean, default: false },
-        curriculumText: String, school: String, subjects: String,
+        curriculumText: String, curriculumText1: String, curriculumText2: String, school: String, subjects: String,
         subject1: String, subject2: String,
         profileTeacher: String, profileSchool: String,
         profilePicture: String,
@@ -94,9 +94,10 @@ if (USE_MONGO) {
         html: String, timestamp: { type: Number, default: Date.now }
     });
     const progressSchema = new mongoose.Schema({
-        teacherEmail: String, studentName: String, term: String,
-        mathScore: String, englishScore: String, scienceScore: String,
-        rubric: String, remarks: String, sharedWith: String,
+        teacherEmail: String, term: String, sharedWith: String,
+        studentsData: Array,
+        // Legacy fields for backward compatibility
+        studentName: String, mathScore: String, englishScore: String, scienceScore: String, rubric: String, remarks: String,
         timestamp: { type: Number, default: Date.now }
     });
 

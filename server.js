@@ -33,6 +33,19 @@ function rateLimit(req, res, next) {
     next();
 }
 
+const generateAttempts = new Map();
+function generateRateLimit(req, res, next) {
+    const identifier = req.user ? req.user.email : req.ip;
+    const now = Date.now();
+    const attempts = generateAttempts.get(identifier) || [];
+    // Limit to 10 generations per hour (3600000 ms)
+    const recentAttempts = attempts.filter(time => now - time < 3600000);
+    if (recentAttempts.length >= 10) return res.status(429).json({ error: 'AI Generation limit reached (10 per hour). Please try again later.' });
+    recentAttempts.push(now);
+    generateAttempts.set(identifier, recentAttempts);
+    next();
+}
+
 // ── ROOT ROUTE (HOMEPAGE FIRST) ──
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'home.html'));
@@ -205,7 +218,9 @@ app.post('/api/suggest', authenticateToken, async (req, res) => {
     const email = req.user.email.toLowerCase();
 
     const user = await User.findOne({ email });
-    const curriculumContext = user && user.curriculumText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Use strictly):\n${user.curriculumText}` : '';
+    const activeWs = req.body.activeWorkspace;
+    const wsText = activeWs == 2 ? (user && (user.curriculumText2 || user.curriculumText)) : (user && (user.curriculumText1 || user.curriculumText));
+    const curriculumContext = wsText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Use strictly):\n${wsText}` : '';
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const prompts = {
@@ -340,7 +355,9 @@ app.post('/api/profile/curriculum', authenticateToken, upload.single('curriculum
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
         let text = '';
-        if (req.file.mimetype === 'application/pdf') {
+        const isPdf = req.file.mimetype === 'application/pdf' || req.file.originalname.toLowerCase().endsWith('.pdf');
+
+        if (isPdf) {
             const dataBuffer = fs.readFileSync(req.file.path);
             const data = await pdfParse(dataBuffer);
             text = data.text;
@@ -350,11 +367,48 @@ app.post('/api/profile/curriculum', authenticateToken, upload.single('curriculum
 
         fs.unlinkSync(req.file.path);
 
-        const curriculumText = text.substring(0, 3000);
-        await User.findOneAndUpdate({ email: req.user.email }, { curriculumText });
+        const workspace = req.body.workspace === '2' ? 2 : 1;
+        const fieldName = workspace === 2 ? 'curriculumText2' : 'curriculumText1';
 
-        res.json({ message: 'Curriculum processed and saved' });
+        // AI-Powered CBC Extractor: Slice a larger chunk to capture strands and outcomes deeper in the document
+        let curriculumText = '';
+        try {
+            const sampleText = text.substring(0, 100000); // Slice up to 100k characters for Gemini to process
+            const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+            const prompt = `You are a professional KICD CBC data extractor. Below is the raw text from an official Kenyan KICD Curriculum Design PDF. 
+Analyze the text and extract ONLY the actual syllabus learning content. Specifically, identify and list:
+1. The Subject Name and Grade level
+2. The main Strands and their Sub-strands
+3. The Specific Learning Outcomes (SLOs) and Suggested Learning Experiences for each sub-strand
+4. The core competencies, values, and Pertinent & Contemporary Issues (PCIs) to be integrated.
+
+CRITICAL: Completely ignore and omit all copyright notices, ISBNs, publisher pages, table of contents, general introductory remarks, prefaces, acknowledgements, and blank lines.
+Provide a clean, beautifully structured, and highly detailed outline.
+
+Raw PDF Text Snippet:
+${sampleText}`;
+
+            const genResult = await model.generateContent(prompt);
+            curriculumText = genResult.response.text().trim();
+        } catch (genErr) {
+            console.warn("AI curriculum extraction failed, using raw fallback:", genErr.message);
+            // Fallback: Use the first 8000 characters of raw text if AI fails
+            curriculumText = text.substring(0, 8000);
+        }
+
+        // Save workspace-specific AND the legacy field
+        await User.findOneAndUpdate({ email: req.user.email }, {
+            [fieldName]: curriculumText,
+            curriculumText: curriculumText
+        });
+
+        res.json({
+            message: 'Curriculum processed and saved',
+            workspace,
+            preview: curriculumText.substring(0, 800)
+        });
     } catch (err) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         console.error("Curriculum upload error:", err);
         res.status(500).json({ error: 'Upload failed: ' + err.message });
     }
@@ -467,15 +521,31 @@ const io = new Server(server, {
 
 // Broadcast new messages to appropriate channel
 io.on('connection', socket => {
-    console.log('🛰️  New client connected');
+    console.log(`🛰️  New client connected: ${socket.id}`);
+
+    // Client joins a named room (channel)
+    socket.on('joinChannel', (channel) => {
+        // Leave all previous rooms except own socket room
+        Object.keys(socket.rooms).forEach(room => {
+            if (room !== socket.id) socket.leave(room);
+        });
+        socket.join(channel);
+        console.log(`📡 ${socket.id} joined channel: ${channel}`);
+    });
+
+    // Legacy: allow direct sendMessage via socket (not used by REST path but kept for compatibility)
     socket.on('sendMessage', async ({ channel, text, sender }) => {
         try {
             const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
             await newMsg.save();
-            io.emit(`chat:${channel}`, newMsg);
+            io.to(channel).emit(`chat:${channel}`, newMsg);
         } catch (err) {
             console.error('❌ Chat save error', err);
         }
+    });
+
+    socket.on('disconnect', () => {
+        console.log(`🔌 Client disconnected: ${socket.id}`);
     });
 });
 
@@ -510,18 +580,21 @@ app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
     }
 });
 
-// Post a new message (fallback for non‑socket clients)
+// Post a new message (primary path - REST posts, socket broadcasts)
 app.post('/api/chat/:channel', authenticateToken, async (req, res) => {
     const { channel } = req.params;
     const { text } = req.body;
     const sender = req.user.email;
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Message cannot be empty' });
     try {
-        const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const newMsg = new ChatMessage({ sender, text: text.trim(), channel, time });
         await newMsg.save();
-        // Broadcast to sockets
+        // Broadcast to ALL connected sockets (channel event scoped by name)
         io.emit(`chat:${channel}`, newMsg);
         res.json(newMsg);
     } catch (err) {
+        console.error('Chat POST error:', err);
         res.status(500).json({ error: 'Failed to send message' });
     }
 });
@@ -535,10 +608,11 @@ app.get('/api/progress', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/progress', authenticateToken, async (req, res) => {
-    const { studentName, term, mathScore, englishScore, scienceScore, rubric, remarks, sharedWith } = req.body;
+    const { term, sharedWith, studentsData, studentName, mathScore, englishScore, scienceScore, rubric, remarks } = req.body;
     try {
         const newRecord = new LearnerProgress({
-            teacherEmail: req.user.email, studentName, term, mathScore, englishScore, scienceScore, rubric, remarks, sharedWith
+            teacherEmail: req.user.email, term, sharedWith, studentsData,
+            studentName, mathScore, englishScore, scienceScore, rubric, remarks // legacy fallback
         });
         await newRecord.save();
         res.json({ message: 'Progress saved', record: newRecord });
@@ -576,6 +650,19 @@ app.get('/api/sow', authenticateToken, async (req, res) => {
         const sows = await SavedSOW.find({ userEmail: req.user.email });
         res.json(sows.reverse());
     } catch (err) { res.status(500).json({ error: 'Failed to fetch saved Schemes of Work' }); }
+});
+
+// Clear entire SOW library — must be before /:id route so 'all' isn't matched as an ID
+app.delete('/api/sow/all', authenticateToken, async (req, res) => {
+    try {
+        if (typeof SavedSOW.deleteMany === 'function') {
+            await SavedSOW.deleteMany({ userEmail: req.user.email });
+        } else {
+            const all = await SavedSOW.find({ userEmail: req.user.email });
+            for (const s of all) await SavedSOW.findOneAndDelete({ _id: s._id });
+        }
+        res.json({ success: true, message: 'Library cleared' });
+    } catch (err) { res.status(500).json({ error: 'Failed to clear library' }); }
 });
 
 app.delete('/api/sow/:id', authenticateToken, async (req, res) => {
@@ -714,12 +801,14 @@ app.post('/api/planner', authenticateToken, async (req, res) => {
 
 
 // ── Generate Document (AI) ──
-app.post('/api/generate', authenticateToken, async (req, res) => {
-    const { documentType, grade, term, subject, strand, subStrand, learningOutcomes, competencies, extendedActivity, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources } = req.body;
+app.post('/api/generate', authenticateToken, generateRateLimit, async (req, res) => {
+    const { documentType, grade, term, subject, strand, subStrand, learningOutcomes, competencies, extendedActivity, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources, previousProgress } = req.body;
     console.log(`[GENERATING] ${documentType} (Template: ${isTemplate}) for ${teacherName} at ${schoolName}`);
     try {
         const user = await User.findOne({ email: req.user.email });
-        const curriculumContext = user && user.curriculumText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Strictly apply this to your generated content):\n${user.curriculumText}` : '';
+        const activeWs = req.body.activeWorkspace;
+        const wsText = activeWs == 2 ? (user && (user.curriculumText2 || user.curriculumText)) : (user && (user.curriculumText1 || user.curriculumText));
+        const curriculumContext = wsText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Strictly apply this to your generated content):\n${wsText}` : '';
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const TS = `width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;`;
         const TD = `border:1px solid #000;padding:8px;vertical-align:top;`;
@@ -758,9 +847,10 @@ app.post('/api/generate', authenticateToken, async (req, res) => {
 
         // ── SCHEME OF WORK ──
         if (documentType === 'sow') {
-            const prompt = `CRITICAL INSTRUCTION: DO NOT use AI generation or automation. You MUST perform a pure and accurate extraction of the details strictly from the provided OFFICIAL CURRICULUM CONTEXT. Do not hallucinate or invent new content.
-You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
-Grade: ${grade} | Learning Area: ${subject} | Term: ${term} | Strands: ${strand}
+            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this termly Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
+Learning Area (Subject): ${subject} | Grade: ${grade} | Term: ${term}
+Target Strands / Sub-strands to include: ${strand}
+${previousProgress ? `Teacher's Previous Progress (Start the SOW exactly where the teacher left off): ${previousProgress}` : ''}
 Facilitator: ${teacherName}
 ${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
 
@@ -768,12 +858,13 @@ Output ONE HTML <table> with these 10 columns:
 Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Questions | Core Competencies, Values & PCIs | Learning Resources | Assessment Method | Remarks
 
 Requirements:
-- 12 weeks, at least 2 lessons per week (24+ rows)
-- All learning outcomes (SLOs), sub-strands, and content MUST be directly extracted from the OFFICIAL CURRICULUM CONTEXT provided without AI automation.
-- SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies
-- Week 7 = Mid-Term Review; Week 12 = End-Term Assessment
-- Resources: KICD-approved textbooks, charts, models, locally available materials
-- Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio
+- CRITICAL: DO NOT use AI generation or automation from scratch. You MUST perform a pure, accurate extraction strictly from the provided OFFICIAL CURRICULUM CONTEXT.
+- Focus ONLY on the strands specified for this single Term (${term}). Do NOT generate for other terms.
+- 12 weeks, at least 2 lessons per week (24+ rows).
+- SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies.
+- Week 7 = Mid-Term Review; Week 12 = End-Term Assessment.
+- Resources: KICD-approved textbooks, charts, models, locally available materials.
+- Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio.
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);
             const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();

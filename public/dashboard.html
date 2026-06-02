@@ -13,6 +13,7 @@
     <link href="/style.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="icon" type="image/png" href="/favicon.png">
 </head>
 
 <body>
@@ -47,6 +48,7 @@
                 </button>
                 <div class="divider"></div>
                 <button class="nav-btn" data-target="view-profile" id="nav-profile">⚙️ Profile Settings</button>
+                <button class="nav-btn" onclick="initWalkthrough(true)">🧭 Start Tour</button>
                 <button class="nav-btn logout-btn" onclick="logout()">🚪 Log Out</button>
                 <div class="storage-widget">
                     <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
@@ -110,136 +112,208 @@
                 </div>
 
                 <div class="card">
-                    <div class="mode-toggle">
-                        <button class="mode-btn active" id="btn-template-sow" onclick="setOutputMode('template')">📋
-                            Blank Template</button>
-                        <button class="mode-btn" id="btn-ai-sow" onclick="setOutputMode('ai')">⚡ Full AI
-                            Generate</button>
+                    <!-- ── SOW MODE TABS ── -->
+                    <div id="sow-mode-toggle" class="mode-toggle">
+                        <button class="mode-btn" id="btn-upload-sow" onclick="setSowMode('upload')">📤 Upload Curriculum</button>
+                        <button class="mode-btn active" id="btn-template-sow" onclick="setSowMode('template')">📋 Blank Template</button>
+                        <button class="mode-btn" id="btn-ai-sow" onclick="setSowMode('ai')">⚡ Full AI Generate</button>
                     </div>
 
-                    <!-- SOW INPUTS FORM -->
-                    <div id="sow-inputs-form">
-                        <div class="input-group" style="margin-top:20px; margin-bottom:14px; padding: 10px; background: rgba(124,107,255,0.05); border-radius: 8px; border: 1px dashed var(--accent);">
-                            <label style="color:var(--accent); font-weight:bold;">1. Upload Curriculum Design (Optional, PDF/TXT)</label>
-                            <input type="file" id="sow-curriculum" accept=".pdf,.txt">
-                            <p style="font-size:11px; color:var(--muted); margin-top:4px;">Upload your curriculum to strictly extract details from it instead of using AI generation.</p>
-                            <button class="btn-primary" style="margin-top:10px; background:#2b579a; font-size:12px; padding:6px 12px;" onclick="uploadCurriculum()">📤 Upload & Extract</button>
-                            <p id="curriculum-msg" style="display:none; color:var(--accent2); margin-top:5px; font-size:12px;">✅ Curriculum Details Extracted Successfully</p>
-                        </div>
-                        <div class="input-grid">
-                            <div class="input-group">
-                                <label>Grade Level</label>
-                                <select id="gradeSelect-sow" onchange="updateTerms('sow')">
-                                    <optgroup label="Pre-Primary">
-                                        <option value="PP1">PP1</option>
-                                        <option value="PP2">PP2</option>
-                                    </optgroup>
-                                    <optgroup label="Lower Primary">
-                                        <option value="Grade 1">Grade 1</option>
-                                        <option value="Grade 2">Grade 2</option>
-                                        <option value="Grade 3">Grade 3</option>
-                                    </optgroup>
-                                    <optgroup label="Upper Primary">
-                                        <option value="Grade 4">Grade 4</option>
-                                        <option value="Grade 5">Grade 5</option>
-                                        <option value="Grade 6">Grade 6</option>
-                                    </optgroup>
-                                    <optgroup label="Junior School (JSS)">
-                                        <option value="Grade 7">Grade 7</option>
-                                        <option value="Grade 8" selected>Grade 8</option>
-                                        <option value="Grade 9">Grade 9</option>
-                                    </optgroup>
-                                    <optgroup label="Senior School (SSS)">
-                                        <option value="Grade 10">Grade 10</option>
-                                        <option value="Grade 11">Grade 11</option>
-                                        <option value="Grade 12">Grade 12</option>
-                                    </optgroup>
-                                </select>
+                    <!-- ── LP MODE TABS (hidden until Lesson Plan radio is selected) ── -->
+                    <div id="lp-mode-toggle" class="mode-toggle" style="display:none;">
+                        <button class="mode-btn active" id="btn-library-lp" onclick="setLpMode('library')">📂 Extract from Library</button>
+                        <button class="mode-btn" id="btn-template-lp" onclick="setLpMode('template')">📋 Blank Template</button>
+                        <button class="mode-btn" id="btn-ai-lp" onclick="setLpMode('ai')">⚡ Full AI Generate</button>
+                    </div>
+
+                    <!-- ════════════════════════════════════════ -->
+                    <!-- SOW PANELS                              -->
+                    <!-- ════════════════════════════════════════ -->
+
+                    <!-- SOW: Upload Curriculum Panel -->
+                    <div id="sow-panel-upload" style="display:none;">
+                        <div class="input-group upload-zone" id="curriculum-upload-zone" style="margin-top:20px; margin-bottom:14px; padding: 25px 15px; background: linear-gradient(145deg, rgba(124,107,255,0.05), rgba(124,107,255,0.02)); border-radius: 16px; border: 2px dashed var(--accent); text-align: center; transition: all 0.3s ease; position: relative;">
+                            <div class="upload-icon" style="font-size: 32px; margin-bottom: 10px; color: var(--accent); animation: float 3s ease-in-out infinite;">📁</div>
+                            <label style="color:var(--text); font-weight:700; font-size: 15px; margin-bottom: 5px;">Upload KICD Curriculum Design (PDF/TXT)</label>
+                            <p style="font-size:12px; color:var(--muted); margin-top:4px; max-width: 80%; margin-left: auto; margin-right: auto;">Upload a KICD Curriculum Design document. We'll extract strands, sub-strands, learning outcomes, and other SOW details directly.</p>
+                            <input type="file" id="sow-curriculum" accept=".pdf,.txt" style="display:none;" onchange="updateFileName(this)">
+                            <div id="file-name-display" style="font-size:13px; color:var(--accent2); margin-top:12px; font-weight:bold; display:none;"></div>
+                            <div style="display:flex; justify-content:center; gap:10px; margin-top:15px; position: relative; z-index: 3;">
+                                <button type="button" class="btn-generate" id="upload-btn" style="background:linear-gradient(135deg, var(--accent), #5643e6); font-size:13px; padding:10px 20px; width: auto;" onclick="handleUploadBtnClick(this)">📁 Browse File</button>
                             </div>
-                            <div class="input-group">
-                                <label id="termLabel-sow">Term</label>
-                                <select id="termSelect-sow">
-                                    <option value="1">Term 1</option>
-                                    <option value="2">Term 2</option>
-                                    <option value="3">Term 3</option>
-                                </select>
+                            <p id="curriculum-msg" style="display:none; color:var(--accent2); margin-top:8px; font-size:13px; font-weight:bold;">✅ Curriculum uploaded &amp; saved to workspace</p>
+                        </div>
+                        <!-- Curriculum Preview Box -->
+                        <div id="curriculum-preview" style="display:none; margin-top:14px; padding:14px; background:rgba(124,107,255,0.04); border-radius:10px; border:1px solid var(--border); text-align:left;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <strong style="color:var(--accent); font-size:13px;">📄 Extracted Content &mdash; Workspace <span id="curriculum-ws-label">1</span></strong>
+                                <button onclick="document.getElementById('curriculum-preview').style.display='none'" style="background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:18px; line-height:1;">&times;</button>
                             </div>
+                            <div id="curriculum-preview-text" style="font-size:12px; line-height:1.5; margin:0; max-height:400px; overflow-y:auto; color:var(--text); font-family:inherit; padding:10px; background:var(--bg); border-radius:6px; border:1px solid rgba(124,107,255,0.1);"></div>
                         </div>
-                        <div class="input-group" style="margin-top:14px;">
-                            <label>Subject / Learning Area (Required)</label>
-                            <input type="text" id="sow-subject" value="Integrated Science" required>
-                        </div>
-                        <div class="input-group" style="margin-top:14px;">
-                            <label>Strands / Sub-strands Range (Required)</label>
-                            <div class="suggest-row">
-                                <select id="sow-strand" required style="flex:1;">
-                                    <option value="" disabled selected>Select a Strand...</option>
-                                </select>
-                                <button class="suggest-btn" style="height:fit-content;" onclick="fetchStrandsDropdown()">✨ Fetch
-                                    KICD Strands</button>
+
+                        <!-- Configure & Generate SOW from Curriculum Form -->
+                        <div id="curriculum-generator-form" style="display:none; margin-top:20px; padding:20px; border:2px dashed var(--accent2); background:rgba(124,107,255,0.02); border-radius:16px;">
+                            <h3 style="font-family:'Syne', sans-serif; font-size:18px; color:var(--accent2); margin-bottom:12px; display:flex; align-items:center; gap:8px;">⚡ Configure &amp; Generate SOW from Curriculum</h3>
+                            <p style="font-size:12px; color:var(--muted); margin-bottom:16px;">The SOW will be strictly extracted from your uploaded curriculum design document rather than generated from scratch.</p>
+                            
+                            <div class="input-grid">
+                                <div class="input-group">
+                                    <label>Grade Level</label>
+                                    <select id="gradeSelect-curriculum">
+                                        <optgroup label="Pre-Primary"><option value="PP1">PP1</option><option value="PP2">PP2</option></optgroup>
+                                        <optgroup label="Lower Primary"><option value="Grade 1">Grade 1</option><option value="Grade 2">Grade 2</option><option value="Grade 3">Grade 3</option></optgroup>
+                                        <optgroup label="Upper Primary"><option value="Grade 4">Grade 4</option><option value="Grade 5">Grade 5</option><option value="Grade 6">Grade 6</option></optgroup>
+                                        <optgroup label="Junior School (JSS)"><option value="Grade 7">Grade 7</option><option value="Grade 8" selected>Grade 8</option><option value="Grade 9">Grade 9</option></optgroup>
+                                        <optgroup label="Senior School (SSS)"><option value="Grade 10">Grade 10</option><option value="Grade 11">Grade 11</option><option value="Grade 12">Grade 12</option></optgroup>
+                                    </select>
+                                </div>
+                                <div class="input-group">
+                                    <label>Select Target Term</label>
+                                    <select id="termSelect-curriculum">
+                                        <option value="1">Term 1</option>
+                                        <option value="2">Term 2</option>
+                                        <option value="3">Term 3</option>
+                                    </select>
+                                </div>
                             </div>
-                            <p style="font-size:11px; color:var(--muted); margin-top:4px;">Strands are automatically fetched based on Grade and Subject.</p>
+
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Subject / Learning Area</label>
+                                <input type="text" id="subject-curriculum" value="Integrated Science" required>
+                            </div>
+
+                            <div class="input-grid" style="margin-top:14px;">
+                                <div class="input-group">
+                                    <label>Range of Strands to Include (Required)</label>
+                                    <input type="text" id="strandRange-curriculum" placeholder="e.g. Strands 1 to 3, or 'Matter and Energy'" required>
+                                </div>
+                                <div class="input-group">
+                                    <label>Previous Progress (Where you reached last term)</label>
+                                    <input type="text" id="previousProgress-curriculum" placeholder="e.g. Completed up to Strand 1 Sub-strand 2. Start from Strand 2.">
+                                </div>
+                            </div>
+
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Holidays / Breaks to Include</label>
+                                <input type="text" id="holidays-curriculum" placeholder="e.g. Mid-term break week 7, Public holidays">
+                            </div>
+
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Extra Instructions for SOW Extraction</label>
+                                <textarea id="extra-curriculum" rows="2" placeholder="e.g. Focus heavily on practical lab activities..."></textarea>
+                            </div>
+
+                            <button class="btn-generate" onclick="generateSowFromCurriculum()" style="margin-top:16px; background:linear-gradient(135deg, var(--accent2), #00d4aa); color:#111; font-weight:700; width:100%;">⚡ Extract &amp; Generate SOW</button>
                         </div>
-                        <div class="input-group" style="margin-top:14px;">
-                            <label>Holidays / Breaks to Include</label>
-                            <input type="text" id="sow-holidays" placeholder="e.g. Mid-term break week 7, Public holidays">
+                        <p style="font-size:12px; color:var(--muted); margin-top:12px; text-align:center;">Once uploaded, the curriculum data powers the termly extraction and generation details above.</p>
+                    </div>
+
+                    <!-- SOW: Blank Template Panel -->
+                    <div id="sow-panel-template">
+                        <div style="text-align:center; padding:20px 0;">
+                            <p style="color:var(--muted); margin-bottom:16px;">Download a ready-to-fill blank SOW template aligned with KICD CBC format.</p>
+                            <button class="btn-generate" onclick="downloadTemplate()" style="width:auto; padding:12px 30px;">📋 Download Blank SOW Template</button>
                         </div>
                     </div>
 
-                    <!-- LESSON PLAN INPUTS FORM -->
-                    <div id="plan-inputs-form" style="display:none;">
-                        <!-- Saved SOW Selector -->
-                        <div class="input-group" id="saved-sow-selector-group" style="margin-top:14px; display:none; margin-bottom:14px;">
-                            <label style="color:var(--accent2); font-weight:bold; display:block; margin-bottom:6px;">📂 Pre-populate from Saved SOW Library</label>
+                    <!-- SOW: Full AI Generate Panel -->
+                    <div id="sow-panel-ai" style="display:none;">
+                        <div id="sow-inputs-form">
+                            <div class="input-grid" style="margin-top:14px;">
+                                <div class="input-group">
+                                    <label>Grade Level</label>
+                                    <select id="gradeSelect-sow" onchange="updateTerms('sow')">
+                                        <optgroup label="Pre-Primary"><option value="PP1">PP1</option><option value="PP2">PP2</option></optgroup>
+                                        <optgroup label="Lower Primary"><option value="Grade 1">Grade 1</option><option value="Grade 2">Grade 2</option><option value="Grade 3">Grade 3</option></optgroup>
+                                        <optgroup label="Upper Primary"><option value="Grade 4">Grade 4</option><option value="Grade 5">Grade 5</option><option value="Grade 6">Grade 6</option></optgroup>
+                                        <optgroup label="Junior School (JSS)"><option value="Grade 7">Grade 7</option><option value="Grade 8" selected>Grade 8</option><option value="Grade 9">Grade 9</option></optgroup>
+                                        <optgroup label="Senior School (SSS)"><option value="Grade 10">Grade 10</option><option value="Grade 11">Grade 11</option><option value="Grade 12">Grade 12</option></optgroup>
+                                    </select>
+                                </div>
+                                <div class="input-group">
+                                    <label id="termLabel-sow">Term</label>
+                                    <select id="termSelect-sow">
+                                        <option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Subject / Learning Area (Required)</label>
+                                <input type="text" id="sow-subject" value="Integrated Science" required>
+                            </div>
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Strands / Sub-strands Range (Required)</label>
+                                <div class="suggest-row">
+                                    <select id="sow-strand" required style="flex:1;">
+                                        <option value="" disabled selected>Select a Strand...</option>
+                                    </select>
+                                    <button class="suggest-btn" style="height:fit-content;" onclick="fetchStrandsDropdown()">✨ Fetch KICD Strands</button>
+                                </div>
+                                <p style="font-size:11px; color:var(--muted); margin-top:4px;">Strands are automatically fetched based on Grade and Subject.</p>
+                            </div>
+                            <div class="input-group" style="margin-top:14px;">
+                                <label>Holidays / Breaks to Include</label>
+                                <input type="text" id="sow-holidays" placeholder="e.g. Mid-term break week 7, Public holidays">
+                            </div>
+                        </div>
+                        <div style="margin-top:14px;">
+                            <textarea id="extra-sow" rows="2" placeholder="Extra instructions for AI..."></textarea>
+                            <button class="btn-generate" id="btn-generate-sow" onclick="generateDocument()" style="margin-top:10px;">⚡ Generate SOW</button>
+                        </div>
+                    </div>
+
+                    <!-- ════════════════════════════════════════ -->
+                    <!-- LESSON PLAN PANELS                      -->
+                    <!-- ════════════════════════════════════════ -->
+
+                    <!-- LP: Extract from Library Panel -->
+                    <div id="lp-panel-library" style="display:none;">
+                        <div class="input-group" id="saved-sow-selector-group" style="margin-top:14px; margin-bottom:14px;">
+                            <label style="color:var(--accent2); font-weight:bold; display:block; margin-bottom:6px;">📂 Select from Saved SOW Library</label>
                             <select id="saved-sow-select" onchange="loadSavedSowFields()" style="border: 2px dashed var(--accent2); background: rgba(124,107,255,0.05); padding: 10px; border-radius: 8px; font-weight:600; color:var(--text); cursor:pointer; outline:none; width:100%;">
                                 <!-- Dynamically populated -->
                             </select>
+                            <div style="margin-top:8px; display:flex; justify-content:flex-end;">
+                                <button onclick="clearSowLibrary()" style="background:transparent; border:1px solid #ff6b6b; color:#ff6b6b; border-radius:6px; padding:4px 12px; font-size:11px; cursor:pointer;">🗑️ Clear Library</button>
+                            </div>
                         </div>
-                        
-                        <!-- Lesson Number Input (Shown when SOW is selected) -->
                         <div class="input-group" id="lp-lesson-number-group" style="display:none; margin-top:14px; margin-bottom:14px;">
                             <label style="color:var(--accent); font-weight:bold; display:block; margin-bottom:6px;">🔢 Lesson Number from SOW</label>
                             <input type="number" id="lp-lesson-number" placeholder="e.g. 5" min="1" value="1" style="border: 2px solid var(--accent); background: rgba(124,107,255,0.02);">
                         </div>
+                        <div style="margin-top:14px; display:flex; gap:12px;">
+                            <button class="btn-generate" id="btn-generate-doc" onclick="generateDocument()" style="flex:1;">⚡ Extract Lesson Plan</button>
+                            <button class="btn-generate" id="btn-generate-guide" onclick="generateTeacherGuideNotes()" style="flex:1; background: linear-gradient(135deg, var(--accent2), #00a388);">📘 Teacher's Guide</button>
+                        </div>
+                    </div>
 
-                        <!-- Standard fields to hide when using saved SOW -->
+                    <!-- LP: Blank Template Panel -->
+                    <div id="lp-panel-template" style="display:none;">
+                        <div style="text-align:center; padding:20px 0;">
+                            <p style="color:var(--muted); margin-bottom:16px;">Download a ready-to-fill blank Lesson Plan template aligned with KICD CBC format.</p>
+                            <button class="btn-generate" onclick="downloadTemplate()" style="width:auto; padding:12px 30px;">📋 Download Blank Lesson Plan Template</button>
+                        </div>
+                    </div>
+
+                    <!-- LP: Full AI Generate Panel -->
+                    <div id="lp-panel-ai" style="display:none;">
                         <div id="lp-standard-fields">
-                            <div class="input-grid" style="margin-top:20px;">
+                            <div class="input-grid" style="margin-top:14px;">
                                 <div class="input-group">
                                     <label>Grade Level</label>
                                     <select id="gradeSelect-lp" onchange="updateTerms('lp')">
-                                        <optgroup label="Pre-Primary">
-                                            <option value="PP1">PP1</option>
-                                            <option value="PP2">PP2</option>
-                                        </optgroup>
-                                        <optgroup label="Lower Primary">
-                                            <option value="Grade 1">Grade 1</option>
-                                            <option value="Grade 2">Grade 2</option>
-                                            <option value="Grade 3">Grade 3</option>
-                                        </optgroup>
-                                        <optgroup label="Upper Primary">
-                                            <option value="Grade 4">Grade 4</option>
-                                            <option value="Grade 5">Grade 5</option>
-                                            <option value="Grade 6">Grade 6</option>
-                                        </optgroup>
-                                        <optgroup label="Junior School (JSS)">
-                                            <option value="Grade 7">Grade 7</option>
-                                            <option value="Grade 8" selected>Grade 8</option>
-                                            <option value="Grade 9">Grade 9</option>
-                                        </optgroup>
-                                        <optgroup label="Senior School (SSS)">
-                                            <option value="Grade 10">Grade 10</option>
-                                            <option value="Grade 11">Grade 11</option>
-                                            <option value="Grade 12">Grade 12</option>
-                                        </optgroup>
+                                        <optgroup label="Pre-Primary"><option value="PP1">PP1</option><option value="PP2">PP2</option></optgroup>
+                                        <optgroup label="Lower Primary"><option value="Grade 1">Grade 1</option><option value="Grade 2">Grade 2</option><option value="Grade 3">Grade 3</option></optgroup>
+                                        <optgroup label="Upper Primary"><option value="Grade 4">Grade 4</option><option value="Grade 5">Grade 5</option><option value="Grade 6">Grade 6</option></optgroup>
+                                        <optgroup label="Junior School (JSS)"><option value="Grade 7">Grade 7</option><option value="Grade 8" selected>Grade 8</option><option value="Grade 9">Grade 9</option></optgroup>
+                                        <optgroup label="Senior School (SSS)"><option value="Grade 10">Grade 10</option><option value="Grade 11">Grade 11</option><option value="Grade 12">Grade 12</option></optgroup>
                                     </select>
                                 </div>
                                 <div class="input-group">
                                     <label id="termLabel-lp">Term</label>
                                     <select id="termSelect-lp">
-                                        <option value="1">Term 1</option>
-                                        <option value="2">Term 2</option>
-                                        <option value="3">Term 3</option>
+                                        <option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option>
                                     </select>
                                 </div>
                             </div>
@@ -257,49 +331,40 @@
                                 <label>Sub-strand (Required)</label>
                                 <input type="text" id="lp-substrand" value="Excretory System" required>
                             </div>
-                            
-                            <!-- Outcomes (Optional/AI) -->
                             <div class="input-group" style="margin-top:14px;">
-                                <label>Specific Learning Outcomes (Leave blank for AI, or enter manually)</label>
+                                <label>Specific Learning Outcomes (Leave blank for AI)</label>
                                 <div class="suggest-row">
                                     <textarea id="lp-outcomes-input" placeholder="Enter outcomes or suggest via KICD..." rows="2"></textarea>
                                     <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-outcomes-input', 'lp-outcomes', 'lp')">✨ Suggest</button>
                                 </div>
                                 <div class="suggest-bubble" id="bubble-lp-outcomes-input"></div>
                             </div>
-
-                            <!-- Competencies (Optional/AI) -->
                             <div class="input-group" style="margin-top:14px;">
-                                <label>Core Competencies &amp; Values (Leave blank for AI, or enter manually)</label>
+                                <label>Core Competencies &amp; Values (Leave blank for AI)</label>
                                 <div class="suggest-row">
-                                    <textarea id="lp-competencies-input" placeholder="Enter competencies/values or suggest via KICD..." rows="2"></textarea>
+                                    <textarea id="lp-competencies-input" placeholder="Enter competencies/values or suggest..." rows="2"></textarea>
                                     <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-competencies-input', 'lp-competencies', 'lp')">✨ Suggest</button>
                                 </div>
                                 <div class="suggest-bubble" id="bubble-lp-competencies-input"></div>
                             </div>
-
-                            <!-- Extended Activity (Optional/AI) -->
                             <div class="input-group" style="margin-top:14px;">
-                                <label>Extended Activity / Homework (Leave blank for AI, or enter manually)</label>
+                                <label>Extended Activity / Homework (Leave blank for AI)</label>
                                 <div class="suggest-row">
-                                    <textarea id="lp-extended-input" placeholder="Enter homework idea or suggest via KICD..." rows="2"></textarea>
+                                    <textarea id="lp-extended-input" placeholder="Enter homework idea or suggest..." rows="2"></textarea>
                                     <button class="suggest-btn" style="height:fit-content;" onclick="suggestField('lp-extended-input', 'lp-extended', 'lp')">✨ Suggest</button>
                                 </div>
                                 <div class="suggest-bubble" id="bubble-lp-extended-input"></div>
                             </div>
                         </div>
+                        <div style="margin-top:14px;">
+                            <textarea id="extra-lp" rows="2" placeholder="Extra instructions for AI..."></textarea>
+                            <div style="display:flex; gap:12px; margin-top:10px;">
+                                <button class="btn-generate" onclick="generateDocument()" style="flex:1;">⚡ Generate Lesson Plan</button>
+                                <button class="btn-generate" onclick="generateTeacherGuideNotes()" style="flex:1; background: linear-gradient(135deg, var(--accent2), #00a388);">📘 Teacher's Guide</button>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <div class="card" id="sow-extra-card">
-                    <textarea id="extra-sow" rows="2" placeholder="Extra instructions for AI..."></textarea>
-                    <div style="display: flex; gap: 12px;">
-                        <button class="btn-generate" id="btn-generate-doc" onclick="generateDocument()" style="flex: 1;">⚡ Generate</button>
-                        <button class="btn-generate" id="btn-generate-guide" onclick="generateTeacherGuideNotes()" style="flex: 1; background: linear-gradient(135deg, var(--accent2), #00a388); display: none;">📘 Generate Teacher's Guide</button>
-                    </div>
-                </div>
-                <div class="card" id="sow-template-card" style="display:none;">
-                    <button class="btn-generate" onclick="downloadTemplate()">📋 Download Blank Template</button>
                 </div>
             </section>
 
@@ -426,6 +491,14 @@
                                     <p>General discussions...</p>
                                 </div>
                             </div>
+                            <div class="chat-channel-item" id="btn-chan-parents" onclick="setChatChannel('parent-community')">
+                                <div class="channel-avatar"
+                                    style="background: linear-gradient(135deg, #00d4aa, #00a388);">👪</div>
+                                <div class="channel-info">
+                                    <h4>Parents Hub</h4>
+                                    <p>Announcements &amp; feedback</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -434,9 +507,13 @@
                         <div class="chat-main-header">
                             <div class="channel-avatar" id="current-chat-avatar"
                                 style="background: linear-gradient(135deg, #7c6bff, #5643e6);">👨‍🏫</div>
-                            <div class="channel-info">
-                                <h3 id="current-chat-title">Staff Room</h3>
-                                <p>End-to-end encrypted connection</p>
+                            <div class="channel-info" style="flex:1; margin-left:14px;">
+                                <h3 id="current-chat-title" style="margin:0; font-size:16px;">Staff Room</h3>
+                                <p id="chat-online-status" style="margin:0; font-size:12px; color:var(--accent2);">Staff &amp; Faculty</p>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--accent2);">
+                                <span style="display:inline-block; width:8px; height:8px; background:#00d4aa; border-radius:50%; box-shadow:0 0 6px #00d4aa; animation:pulse 2s infinite;"></span>
+                                Live
                             </div>
                         </div>
 
@@ -574,65 +651,52 @@
                 <div class="hero">
                     <span class="hero-badge">TRACKING</span>
                     <h1>Learner <span>Progress.</span></h1>
-                    <p>Enter student exam performances and assess their understanding using a rubric.</p>
+                    <p>Enter comprehensive CBC formative and summative assessments for your class.</p>
                 </div>
                 
-                <div class="card">
-                    <h3 style="margin-bottom:15px; font-size:18px;">Add New Progress Record</h3>
-                    <div class="input-grid">
-                        <div class="input-group">
-                            <label>Learner Full Name</label>
-                            <input type="text" id="prog-student" placeholder="e.g. John Doe">
-                        </div>
-                        <div class="input-group">
-                            <label>Term</label>
-                            <select id="prog-term">
+                <div class="card" style="overflow-x: auto;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:15px; align-items:center;">
+                        <h3 style="font-size:18px;">CBC Class Progress Record</h3>
+                        <div>
+                            <select id="prog-term" style="padding:6px; border-radius:6px; background:var(--bg); border:1px solid var(--border); color:var(--text);">
                                 <option value="Term 1">Term 1</option>
                                 <option value="Term 2">Term 2</option>
                                 <option value="Term 3">Term 3</option>
                             </select>
+                            <input type="email" id="prog-parent-email" placeholder="Parent Email (to share)" style="padding:6px; margin-left:10px; border-radius:6px; background:var(--bg); border:1px solid var(--border); color:var(--text);">
                         </div>
                     </div>
                     
-                    <h4 style="margin:20px 0 10px; font-size:14px; color:var(--muted);">Exam Scores (%)</h4>
-                    <div class="input-grid">
-                        <div class="input-group">
-                            <label>Mathematics</label>
-                            <input type="number" id="prog-math" placeholder="e.g. 85">
-                        </div>
-                        <div class="input-group">
-                            <label>English / Language</label>
-                            <input type="number" id="prog-eng" placeholder="e.g. 78">
-                        </div>
-                        <div class="input-group">
-                            <label>Science / Technical</label>
-                            <input type="number" id="prog-sci" placeholder="e.g. 92">
-                        </div>
-                    </div>
-
-                    <h4 style="margin:20px 0 10px; font-size:14px; color:var(--muted);">CBC Rubric Assessment</h4>
-                    <div class="input-group">
-                        <label>Overall Understanding Level</label>
-                        <select id="prog-rubric">
-                            <option value="Exceeding Expectations (4)">Exceeding Expectations (4) - Highly consistent</option>
-                            <option value="Meeting Expectations (3)">Meeting Expectations (3) - Understands most concepts</option>
-                            <option value="Approaching Expectations (2)">Approaching Expectations (2) - Needs some support</option>
-                            <option value="Below Expectations (1)">Below Expectations (1) - Needs intensive support</option>
-                        </select>
-                    </div>
-                    <div class="input-group" style="margin-top:14px;">
-                        <label>Teacher's Remarks</label>
-                        <textarea id="prog-remarks" rows="2" placeholder="Brief comment on learner's progress..."></textarea>
-                    </div>
-                    <div class="input-group" style="margin-top:14px;">
-                        <label>Share with Parent (Email)</label>
-                        <input type="email" id="prog-parent-email" placeholder="parent@email.com">
-                    </div>
+                    <table style="width:100%; border-collapse:collapse; min-width:900px; text-align:left; font-size:13px;" id="progress-table">
+                        <thead>
+                            <tr>
+                                <th style="padding:10px; border-bottom:2px solid var(--border); border-right:2px solid var(--border);">Student Details</th>
+                                <th colspan="3" style="padding:10px; text-align:center; border-bottom:2px solid var(--border); border-right:2px solid var(--border); background:rgba(124,107,255,0.05);">Formative Record (Daily)</th>
+                                <th colspan="4" style="padding:10px; text-align:center; border-bottom:2px solid var(--border); background:rgba(0,212,170,0.05);">Summative Record (Termly)</th>
+                            </tr>
+                            <tr style="color:var(--muted); font-size:12px;">
+                                <th style="padding:8px; border-bottom:1px solid var(--border); border-right:2px solid var(--border);">Full Name</th>
+                                <th style="padding:8px; border-bottom:1px solid var(--border); background:rgba(124,107,255,0.05);">Attendance</th>
+                                <th style="padding:8px; border-bottom:1px solid var(--border); background:rgba(124,107,255,0.05);">Assignments</th>
+                                <th style="padding:8px; border-bottom:1px solid var(--border); border-right:2px solid var(--border); background:rgba(124,107,255,0.05);">Group Work</th>
+                                <th style="padding:8px; border-bottom:1px solid var(--border); background:rgba(0,212,170,0.05);">CAT</th>
+                                <th style="padding:8px; border-bottom:1px solid var(--border); background:rgba(0,212,170,0.05);">Presentation</th>
+                                <th style="padding:8px; border-bottom:1px solid var(--border); background:rgba(0,212,170,0.05);">Projects</th>
+                                <th style="padding:8px; border-bottom:1px solid var(--border); background:rgba(0,212,170,0.05);">Other/Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody id="progress-tbody">
+                            <!-- JS generates first row automatically -->
+                        </tbody>
+                    </table>
                     
-                    <button class="btn-generate" onclick="saveProgressRecord()" style="margin-top:20px;">💾 Save Progress Record</button>
+                    <div style="margin-top:15px; display:flex; justify-content:space-between;">
+                        <button class="btn-primary" onclick="addProgressRow()" style="background:var(--bg); border:1px solid var(--accent); color:var(--text);">+ Add Student</button>
+                        <button class="btn-generate" onclick="saveClassProgress()">💾 Save Class Record</button>
+                    </div>
                 </div>
                 
-                <h3 style="margin-top:40px; margin-bottom:20px; font-size:20px;">Saved Records</h3>
+                <h3 style="margin-top:40px; margin-bottom:20px; font-size:20px;">Saved Class Records</h3>
                 <div id="progress-list-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;">
                     <div style="color:var(--muted); text-align:center; padding: 20px; grid-column: 1/-1;">No records saved yet.</div>
                 </div>
@@ -660,6 +724,7 @@
 
         </main>
     </div>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/script.js"></script>
 </body>
 
