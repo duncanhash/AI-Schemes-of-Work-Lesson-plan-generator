@@ -8,7 +8,10 @@ const USE_MONGO = process.env.MONGODB_URI ? true : false;
 // ── LOCAL JSON FALLBACK (Mock Model) ──
 function readDB() {
     if (!fs.existsSync(DB_PATH)) return { users: [], portfolios: [], messages: [], plans: [], sows: [], progress: [] };
-    return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    const db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    const collections = ['users', 'portfolios', 'messages', 'plans', 'sows', 'progress'];
+    collections.forEach(c => { if (!db[c]) db[c] = []; });
+    return db;
 }
 function writeDB(data) {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
@@ -74,7 +77,9 @@ if (USE_MONGO) {
     const userSchema = new mongoose.Schema({
         name: String, email: { type: String, unique: true }, password: { type: String, required: true },
         role: { type: String, default: 'teacher' }, otp: String, isVerified: { type: Boolean, default: false },
-        curriculumText: String, curriculumText1: String, curriculumText2: String, school: String, subjects: String,
+        curriculumText: String, curriculumText1: String, curriculumText2: String,
+        curriculumSubject1: String, curriculumGrade1: String, curriculumSubject2: String, curriculumGrade2: String,
+        school: String, subjects: String,
         subject1: String, subject2: String,
         profileTeacher: String, profileSchool: String,
         profilePicture: String,

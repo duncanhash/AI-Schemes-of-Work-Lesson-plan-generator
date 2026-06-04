@@ -82,13 +82,36 @@ async function populateProfileFields() {
         // Initialize Dual Workspace
         initWorkspaceSelector(profile);
 
-        // Toggle generator form based on whether active workspace has a curriculum uploaded
-        const activeText = activeSubjectNum === 2 ? (profile.curriculumText2 || profile.curriculumText) : (profile.curriculumText1 || profile.curriculumText);
-        const genForm = document.getElementById('curriculum-generator-form');
-        if (genForm) {
-            genForm.style.display = activeText ? 'block' : 'none';
-        }
+        // Update curriculum generator form state
+        updateUploadPanelState(profile);
     } catch (e) { console.error("Profile load error:", e); }
+}
+
+function updateUploadPanelState(profile) {
+    if (!profile) return;
+    const activeText = activeSubjectNum === 2 ? (profile.curriculumText2 || profile.curriculumText) : (profile.curriculumText1 || profile.curriculumText);
+    const activeGrade = activeSubjectNum === 2 ? profile.curriculumGrade2 : profile.curriculumGrade1;
+    const activeSubj = activeSubjectNum === 2 ? profile.curriculumSubject2 : profile.curriculumSubject1;
+
+    const genForm = document.getElementById('curriculum-generator-form');
+    if (genForm) {
+        genForm.style.display = 'block';
+    }
+
+    const loadedMsg = document.getElementById('curriculum-loaded-msg');
+    if (loadedMsg) {
+        loadedMsg.style.display = activeText ? 'block' : 'none';
+    }
+
+    const gradeInput = document.getElementById('gradeSelect-curriculum');
+    const subjInput = document.getElementById('subject-curriculum');
+
+    if (gradeInput) {
+        gradeInput.value = activeGrade || '';
+    }
+    if (subjInput) {
+        subjInput.value = activeSubj || '';
+    }
 }
 
 function setupNavigation() {
@@ -444,6 +467,18 @@ async function generateDocument(isTemplate = false) {
 
 async function generateSowFromCurriculum() {
     try {
+        const fileInput = document.getElementById('sow-curriculum');
+        if (fileInput && fileInput.files && fileInput.files.length > 0) {
+            // First upload and extract the file
+            await uploadCurriculum();
+            // Need to retrieve the newly populated read-only fields after upload
+        } else {
+            const activeText = activeSubjectNum === 2 ? (userProfileCache.curriculumText2 || userProfileCache.curriculumText) : (userProfileCache.curriculumText1 || userProfileCache.curriculumText);
+            if (!activeText) {
+                return alert("Please select a curriculum file to upload, or switch to a workspace that has one.");
+            }
+        }
+
         const grade = document.getElementById('gradeSelect-curriculum').value;
         const term = document.getElementById('termSelect-curriculum').value;
         const subject = document.getElementById('subject-curriculum').value;
@@ -452,8 +487,8 @@ async function generateSowFromCurriculum() {
         const holidays = document.getElementById('holidays-curriculum').value;
         let extraInstructions = document.getElementById('extra-curriculum').value || '';
 
-        if (!subject || !strandRange) {
-            return alert("Subject and Strand Range are required to generate SOW.");
+        if (!strandRange) {
+            return alert("Strand Range is required to generate SOW.");
         }
 
         showProgress(20, "Referring to curriculum text...");
@@ -1014,27 +1049,7 @@ async function uploadCurriculum() {
             // Refresh userProfileCache
             await populateProfileFields();
 
-            // Reveal the termly generator form instantly
-            const genForm = document.getElementById('curriculum-generator-form');
-            if (genForm) genForm.style.display = 'block';
-
             const msg = document.getElementById('curriculum-msg');
-            if (msg) {
-                msg.style.display = 'block';
-                setTimeout(() => msg.style.display = 'none', 4000);
-            }
-
-            // Show extracted text preview
-            if (data.preview) {
-                const preview = document.getElementById('curriculum-preview');
-                const previewText = document.getElementById('curriculum-preview-text');
-                const wsLabel = document.getElementById('curriculum-ws-label');
-                if (preview && previewText) {
-                    previewText.textContent = data.preview;
-                    if (wsLabel) wsLabel.textContent = data.workspace || activeSubjectNum;
-                    preview.style.display = 'block';
-                }
-            }
 
             // Change button to toggle the preview panel
             const btn = document.getElementById('upload-btn');
@@ -1442,7 +1457,7 @@ function selectWorkspaceSubject(num, showNotification = true) {
     if (lpSub) lpSub.value = activeSubject;
     if (rowSub) rowSub.value = activeSubject;
     if (projSub) projSub.value = activeSubject;
-    if (curriculumSub) curriculumSub.value = activeSubject;
+    if (curriculumSub && !curriculumSub.hasAttribute('readonly')) curriculumSub.value = activeSubject;
 
     if (assessGradeSub) {
         const currentVal = assessGradeSub.value || '';
@@ -1456,11 +1471,7 @@ function selectWorkspaceSubject(num, showNotification = true) {
 
     // Dynamic SOW termly generator form display based on cached curriculum text availability
     if (userProfileCache) {
-        const activeText = num === 2 ? (userProfileCache.curriculumText2 || userProfileCache.curriculumText) : (userProfileCache.curriculumText1 || userProfileCache.curriculumText);
-        const genForm = document.getElementById('curriculum-generator-form');
-        if (genForm) {
-            genForm.style.display = activeText ? 'block' : 'none';
-        }
+        updateUploadPanelState(userProfileCache);
     }
 
     if (showNotification) {
@@ -1641,10 +1652,5 @@ window.updateFileName = function(input) {
 
 window.handleUploadBtnClick = function(btn) {
     const fileInput = document.getElementById('sow-curriculum');
-    if (!fileInput) return;
-    if (!fileInput.files || !fileInput.files.length) {
-        fileInput.click();
-    } else {
-        uploadCurriculum();
-    }
+    if (fileInput) fileInput.click();
 };

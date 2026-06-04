@@ -135,13 +135,13 @@
                         <div class="input-group upload-zone" id="curriculum-upload-zone" style="margin-top:20px; margin-bottom:14px; padding: 25px 15px; background: linear-gradient(145deg, rgba(124,107,255,0.05), rgba(124,107,255,0.02)); border-radius: 16px; border: 2px dashed var(--accent); text-align: center; transition: all 0.3s ease; position: relative;">
                             <div class="upload-icon" style="font-size: 32px; margin-bottom: 10px; color: var(--accent); animation: float 3s ease-in-out infinite;">📁</div>
                             <label style="color:var(--text); font-weight:700; font-size: 15px; margin-bottom: 5px;">Upload KICD Curriculum Design (PDF/TXT)</label>
-                            <p style="font-size:12px; color:var(--muted); margin-top:4px; max-width: 80%; margin-left: auto; margin-right: auto;">Upload a KICD Curriculum Design document. We'll extract strands, sub-strands, learning outcomes, and other SOW details directly.</p>
+                            <p style="font-size:12px; color:var(--muted); margin-top:4px; max-width: 80%; margin-left: auto; margin-right: auto;">Select a file to power the AI SOW generator below.</p>
                             <input type="file" id="sow-curriculum" accept=".pdf,.txt" style="display:none;" onchange="updateFileName(this)">
                             <div id="file-name-display" style="font-size:13px; color:var(--accent2); margin-top:12px; font-weight:bold; display:none;"></div>
                             <div style="display:flex; justify-content:center; gap:10px; margin-top:15px; position: relative; z-index: 3;">
                                 <button type="button" class="btn-generate" id="upload-btn" style="background:linear-gradient(135deg, var(--accent), #5643e6); font-size:13px; padding:10px 20px; width: auto;" onclick="handleUploadBtnClick(this)">📁 Browse File</button>
                             </div>
-                            <p id="curriculum-msg" style="display:none; color:var(--accent2); margin-top:8px; font-size:13px; font-weight:bold;">✅ Curriculum uploaded &amp; saved to workspace</p>
+                            <p id="curriculum-loaded-msg" style="display:none; color:#00d4aa; margin-top:8px; font-size:13px; font-weight:bold;">✅ Curriculum already loaded for this workspace. You can replace it or generate below.</p>
                         </div>
                         <!-- Curriculum Preview Box -->
                         <div id="curriculum-preview" style="display:none; margin-top:14px; padding:14px; background:rgba(124,107,255,0.04); border-radius:10px; border:1px solid var(--border); text-align:left;">
@@ -153,20 +153,14 @@
                         </div>
 
                         <!-- Configure & Generate SOW from Curriculum Form -->
-                        <div id="curriculum-generator-form" style="display:none; margin-top:20px; padding:20px; border:2px dashed var(--accent2); background:rgba(124,107,255,0.02); border-radius:16px;">
+                        <div id="curriculum-generator-form" style="margin-top:20px; padding:20px; border:2px dashed var(--accent2); background:rgba(124,107,255,0.02); border-radius:16px;">
                             <h3 style="font-family:'Syne', sans-serif; font-size:18px; color:var(--accent2); margin-bottom:12px; display:flex; align-items:center; gap:8px;">⚡ Configure &amp; Generate SOW from Curriculum</h3>
-                            <p style="font-size:12px; color:var(--muted); margin-bottom:16px;">The SOW will be strictly extracted from your uploaded curriculum design document rather than generated from scratch.</p>
+                            <p style="font-size:12px; color:var(--muted); margin-bottom:16px;">Configure your term and strand range below, then click Extract &amp; Generate.</p>
                             
                             <div class="input-grid">
-                                <div class="input-group">
-                                    <label>Grade Level</label>
-                                    <select id="gradeSelect-curriculum">
-                                        <optgroup label="Pre-Primary"><option value="PP1">PP1</option><option value="PP2">PP2</option></optgroup>
-                                        <optgroup label="Lower Primary"><option value="Grade 1">Grade 1</option><option value="Grade 2">Grade 2</option><option value="Grade 3">Grade 3</option></optgroup>
-                                        <optgroup label="Upper Primary"><option value="Grade 4">Grade 4</option><option value="Grade 5">Grade 5</option><option value="Grade 6">Grade 6</option></optgroup>
-                                        <optgroup label="Junior School (JSS)"><option value="Grade 7">Grade 7</option><option value="Grade 8" selected>Grade 8</option><option value="Grade 9">Grade 9</option></optgroup>
-                                        <optgroup label="Senior School (SSS)"><option value="Grade 10">Grade 10</option><option value="Grade 11">Grade 11</option><option value="Grade 12">Grade 12</option></optgroup>
-                                    </select>
+                                <div class="input-group" style="display:none;">
+                                    <label>Grade Level (Auto-Extracted)</label>
+                                    <input type="text" id="gradeSelect-curriculum" readonly style="background: rgba(124,107,255,0.1); border: 1px solid rgba(124,107,255,0.3); color: var(--muted); cursor: not-allowed;" value="Loading...">
                                 </div>
                                 <div class="input-group">
                                     <label>Select Target Term</label>
@@ -178,9 +172,9 @@
                                 </div>
                             </div>
 
-                            <div class="input-group" style="margin-top:14px;">
-                                <label>Subject / Learning Area</label>
-                                <input type="text" id="subject-curriculum" value="Integrated Science" required>
+                            <div class="input-group" style="margin-top:14px; display:none;">
+                                <label>Subject / Learning Area (Auto-Extracted)</label>
+                                <input type="text" id="subject-curriculum" readonly style="background: rgba(124,107,255,0.1); border: 1px solid rgba(124,107,255,0.3); color: var(--muted); cursor: not-allowed;" value="Loading...">
                             </div>
 
                             <div class="input-grid" style="margin-top:14px;">

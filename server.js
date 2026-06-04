@@ -58,6 +58,25 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// Add global retry logic for 503 Service Unavailable errors
+const originalGetModel = genAI.getGenerativeModel.bind(genAI);
+genAI.getGenerativeModel = function(options) {
+    const model = originalGetModel(options);
+    const originalGenerate = model.generateContent.bind(model);
+    model.generateContent = async function(prompt, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                return await originalGenerate(prompt);
+            } catch (err) {
+                if (i === retries - 1 || !err.message.includes('503')) throw err;
+                console.warn(`[Gemini API] 503 error, retrying in ${1500 * (i + 1)}ms...`);
+                await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+            }
+        }
+    };
+    return model;
+};
+
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
@@ -318,7 +337,13 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
             subject1: user.subject1 || '',
             subject2: user.subject2 || '',
             role: user.role || 'teacher',
-            profilePicture: user.profilePicture || ''
+            profilePicture: user.profilePicture || '',
+            curriculumText1: user.curriculumText1 || '',
+            curriculumText2: user.curriculumText2 || '',
+            curriculumSubject1: user.curriculumSubject1 || '',
+            curriculumGrade1: user.curriculumGrade1 || '',
+            curriculumSubject2: user.curriculumSubject2 || '',
+            curriculumGrade2: user.curriculumGrade2 || ''
         });
     } catch (err) { res.status(500).json({ error: 'Profile load error' }); }
 });
@@ -367,8 +392,46 @@ app.post('/api/profile/curriculum', authenticateToken, upload.single('curriculum
 
         fs.unlinkSync(req.file.path);
 
+        if (!text || !text.trim()) {
+            return res.status(400).json({ error: 'The uploaded file does not contain readable text. Please upload a digital PDF (not scanned) or a TXT document.' });
+        }
+
         const workspace = req.body.workspace === '2' ? 2 : 1;
         const fieldName = workspace === 2 ? 'curriculumText2' : 'curriculumText1';
+        const subjectFieldName = workspace === 2 ? 'curriculumSubject2' : 'curriculumSubject1';
+        const gradeFieldName = workspace === 2 ? 'curriculumGrade2' : 'curriculumGrade1';
+
+        // 1. Auto-extract Subject Name and Grade Level from cover page (first 5,000 characters)
+        let extractedSubject = '';
+        let extractedGrade = '';
+        try {
+            const metaModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+            const metaPrompt = `Analyze the cover page text of this KICD curriculum design and extract:
+1. The exact Subject Name (Learning Area)
+2. The Grade Level (e.g. Grade 7, Grade 8, Grade 10, PP1, PP2, Grade 1, etc.)
+
+Format your response as a simple JSON object:
+{
+  "subject": "Subject Name",
+  "grade": "Grade X"
+}
+Do not use markdown formatting, backticks or extra text, just raw JSON.
+
+Text:
+${text.substring(0, 5000)}`;
+
+            const metaResult = await metaModel.generateContent(metaPrompt);
+            const metaText = metaResult.response.text().replace(/```json/gi, '').replace(/```/gi, '').trim();
+            const metaJson = JSON.parse(metaText);
+            extractedSubject = metaJson.subject || '';
+            extractedGrade = metaJson.grade || '';
+        } catch (metaErr) {
+            console.warn("Failed to extract metadata via AI:", metaErr.message);
+            // Fallback: simple regex matching from text
+            const firstLines = text.substring(0, 2000);
+            const gradeMatch = firstLines.match(/(Grade\s+\d+|PP1|PP2)/i);
+            if (gradeMatch) extractedGrade = gradeMatch[1];
+        }
 
         // AI-Powered CBC Extractor: Slice a larger chunk to capture strands and outcomes deeper in the document
         let curriculumText = '';
@@ -396,15 +459,19 @@ ${sampleText}`;
             curriculumText = text.substring(0, 8000);
         }
 
-        // Save workspace-specific AND the legacy field
+        // Save workspace-specific AND the legacy fields
         await User.findOneAndUpdate({ email: req.user.email }, {
             [fieldName]: curriculumText,
-            curriculumText: curriculumText
+            curriculumText: curriculumText,
+            [subjectFieldName]: extractedSubject,
+            [gradeFieldName]: extractedGrade
         });
 
         res.json({
             message: 'Curriculum processed and saved',
             workspace,
+            subject: extractedSubject,
+            grade: extractedGrade,
             preview: curriculumText.substring(0, 800)
         });
     } catch (err) {
@@ -802,7 +869,7 @@ app.post('/api/planner', authenticateToken, async (req, res) => {
 
 // ── Generate Document (AI) ──
 app.post('/api/generate', authenticateToken, generateRateLimit, async (req, res) => {
-    const { documentType, grade, term, subject, strand, subStrand, learningOutcomes, competencies, extendedActivity, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources, previousProgress } = req.body;
+    let { documentType, grade, term, subject, strand, subStrand, learningOutcomes, competencies, extendedActivity, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources, previousProgress } = req.body;
     console.log(`[GENERATING] ${documentType} (Template: ${isTemplate}) for ${teacherName} at ${schoolName}`);
     try {
         const user = await User.findOne({ email: req.user.email });
@@ -816,6 +883,7 @@ app.post('/api/generate', authenticateToken, generateRateLimit, async (req, res)
         const H4 = `font-size:14px;margin:20px 0 8px;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:4px;`;
 
         const adminHeader = `<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px;font-family:Arial,sans-serif;">
+${user && user.schoolLogo ? `<img src="${user.schoolLogo}" style="max-height:80px; margin-bottom:10px; display:block; margin-left:auto; margin-right:auto;">` : ''}
 <p style="margin:4px 0;font-style:italic;font-size:13px;">Competency-Based Curriculum (CBC)</p>
 <table style="${TS}margin-top:12px;"><tbody>
 <tr><td style="${TD}" width="25%"><strong>Facilitator:</strong> ${teacherName || '________________'}</td><td style="${TD}" width="25%"><strong>Learning Area:</strong> ${subject || '________________'}</td><td style="${TD}" width="25%"><strong>Grade:</strong> ${grade || '________________'}</td><td style="${TD}" width="25%"><strong>Term:</strong> ${term || '________________'}</td></tr>
@@ -847,18 +915,23 @@ app.post('/api/generate', authenticateToken, generateRateLimit, async (req, res)
 
         // ── SCHEME OF WORK ──
         if (documentType === 'sow') {
-            const prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this termly Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
+            let prompt = '';
+            if (wsText) {
+                prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this termly Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
 Learning Area (Subject): ${subject} | Grade: ${grade} | Term: ${term}
 Target Strands / Sub-strands to include: ${strand}
 ${previousProgress ? `Teacher's Previous Progress (Start the SOW exactly where the teacher left off): ${previousProgress}` : ''}
 Facilitator: ${teacherName}
-${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}${curriculumContext}
+${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}
+
+OFFICIAL CURRICULUM CONTEXT (Strictly apply this to your generated content):
+${wsText}
 
 Output ONE HTML <table> with these 10 columns:
 Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Questions | Core Competencies, Values & PCIs | Learning Resources | Assessment Method | Remarks
 
 Requirements:
-- CRITICAL: DO NOT use AI generation or automation from scratch. You MUST perform a pure, accurate extraction strictly from the provided OFFICIAL CURRICULUM CONTEXT.
+- CRITICAL: DO NOT use AI generation or automation from scratch. You MUST perform a pure, accurate extraction strictly from the provided OFFICIAL CURRICULUM CONTEXT. Do not hallucinate or invent new content.
 - Focus ONLY on the strands specified for this single Term (${term}). Do NOT generate for other terms.
 - 12 weeks, at least 2 lessons per week (24+ rows).
 - SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies.
@@ -866,6 +939,27 @@ Requirements:
 - Resources: KICD-approved textbooks, charts, models, locally available materials.
 - Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio.
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            } else {
+                prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly generate and align this termly Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
+Learning Area (Subject): ${subject} | Grade: ${grade} | Term: ${term}
+Target Strands / Sub-strands to include: ${strand}
+${previousProgress ? `Teacher's Previous Progress (Start the SOW exactly where the teacher left off): ${previousProgress}` : ''}
+Facilitator: ${teacherName}
+${extraInstructions ? `Extra Instructions: ${extraInstructions}` : ''}
+
+Output ONE HTML <table> with these 10 columns:
+Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Questions | Core Competencies, Values & PCIs | Learning Resources | Assessment Method | Remarks
+
+Requirements:
+- Focus ONLY on the strands specified for this single Term (${term}). Do NOT generate for other terms.
+- 12 weeks, at least 2 lessons per week (24+ rows).
+- SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies.
+- Week 7 = Mid-Term Review; Week 12 = End-Term Assessment.
+- Resources: KICD-approved textbooks, charts, models, locally available materials.
+- Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio.
+Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
+            }
+
             const r = await model.generateContent(prompt);
             const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">SCHEME OF WORK — ${subject} | ${grade} | Term ${term}</h3>${raw}${sigBlock}`;
@@ -913,55 +1007,10 @@ Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
                         }
                     }
 
-                    const raw = `
-<h4 style="${H4}">1. ADMINISTRATIVE DETAILS</h4>
-<table style="${TS}">
-    <tr>
-        <th style="${TH}" width="25%">School</th><td style="${TD}" width="25%">${schoolName || '________________'}</td>
-        <th style="${TH}" width="25%">Grade</th><td style="${TD}" width="25%">${targetGrade}</td>
-    </tr>
-    <tr>
-        <th style="${TH}">Learning Area</th><td style="${TD}">${targetSubject}</td>
-        <th style="${TH}">Date</th><td style="${TD}">________________</td>
-    </tr>
-    <tr>
-        <th style="${TH}">Strand</th><td style="${TD}">${targetStrand}</td>
-        <th style="${TH}">Time</th><td style="${TD}">________________</td>
-    </tr>
-    <tr>
-        <th style="${TH}">Sub-strand</th><td style="${TD}">${extractedSubStrand}</td>
-        <th style="${TH}">Duration</th><td style="${TD}">40 mins</td>
-    </tr>
-</table>
-
-<h4 style="${H4}">2. SPECIFIC LEARNING OUTCOMES</h4>
-<div>${extractedSLO}</div>
-
-<h4 style="${H4}">3. KEY INQUIRY QUESTIONS</h4>
-<div>${extractedKIQ}</div>
-
-<h4 style="${H4}">4. CORE COMPETENCIES & VALUES</h4>
-<div>${extractedCompetencies}</div>
-
-<h4 style="${H4}">5. LEARNING RESOURCES</h4>
-<div>${extractedResources}</div>
-
-<h4 style="${H4}">6. LESSON DEVELOPMENT</h4>
-<table style="${TS}">
-    <tr><th style="${TH}">Phase</th><th style="${TH}">Facilitator Activity</th><th style="${TH}">Learner Activity</th><th style="${TH}">Time</th></tr>
-    <tr><td style="${TD}">Introduction</td><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">5 mins</td></tr>
-    <tr><td style="${TD}">Lesson Development</td><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">25 mins</td></tr>
-    <tr><td style="${TD}">Conclusion</td><td style="${TD}"></td><td style="${TD}"></td><td style="${TD}">10 mins</td></tr>
-</table>
-
-<h4 style="${H4}">7. FACILITATOR'S REFLECTION</h4>
-<table style="${TS}">
-    <tr><th style="${TH}">What went well?</th><th style="${TH}">What needs improvement?</th><th style="${TH}">Follow-up action?</th></tr>
-    <tr><td style="${TD}"><br><br><br></td><td style="${TD}"></td><td style="${TD}"></td></tr>
-</table>
-`;
-                    html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">LESSON PLAN (Extracted from SOW) — ${targetSubject} | ${targetGrade} | Term ${targetTerm}</h3>${raw}${sigBlock}`;
-                    return res.json({ html: html, markdown: raw });
+                    targetSubStrand = extractedSubStrand;
+                    learningOutcomes = extractedSLO;
+                    competencies = extractedCompetencies;
+                    sowContext = `Key Inquiry Questions: ${extractedKIQ}\nLearning Resources: ${extractedResources}`;
                 }
             }
 
