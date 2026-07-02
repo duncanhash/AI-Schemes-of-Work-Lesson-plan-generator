@@ -365,9 +365,7 @@ app.post('/api/profile', authenticateToken, async (req, res) => {
 
         // Only update picture if one was provided
         if (profilePicture) {
-            // Save profile picture to disk to save DB space
-            const picPath = saveBase64Image(profilePicture);
-            updateData.profilePicture = picPath;
+            updateData.profilePicture = profilePicture;
         }
         
         await User.findOneAndUpdate({ email: req.user.email }, updateData);
@@ -377,6 +375,7 @@ app.post('/api/profile', authenticateToken, async (req, res) => {
 
 app.post('/api/profile/curriculum', authenticateToken, upload.single('curriculum'), async (req, res) => {
     try {
+        console.log(`[UPLOAD] Uploading curriculum file: ${req.file ? req.file.originalname : 'no file'}`);
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
         let text = '';
@@ -517,20 +516,20 @@ app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Chat load error' }); }
 });
 
+// Legacy POST (kept for backward compat)
 app.post('/api/chat', authenticateToken, async (req, res) => {
     const { text, channel } = req.body;
     if (!text) return res.status(400).json({ error: 'Message required' });
     try {
         const chan = channel || 'staff';
-        // Secure staff channel: only teachers/facilitators can post
-        if (chan === 'staff') {
-            const user = await User.findOne({ email: req.user.email });
-            if (!user || (user.role || 'teacher') !== 'teacher') {
-                return res.status(403).json({ error: 'Access denied: Staff room is for facilitators only' });
-            }
+        const user = await User.findOne({ email: req.user.email });
+        if (chan === 'staff' && (!user || (user.role || 'teacher') !== 'teacher')) {
+            return res.status(403).json({ error: 'Access denied: Staff room is for facilitators only' });
         }
+        const displayName = (user && user.profileTeacher) || req.user.email.split('@')[0];
         const newMessage = new ChatMessage({
             sender: req.user.email,
+            senderName: displayName,
             text,
             channel: chan,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -586,13 +585,31 @@ const io = new Server(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] }
 });
 
+// ── Online Presence Tracking ──
+const onlineUsers = new Map(); // socketId -> { email, name }
+
+function getOnlineCount() {
+    const uniqueEmails = new Set();
+    onlineUsers.forEach(u => uniqueEmails.add(u.email));
+    return uniqueEmails.size;
+}
+
+function broadcastOnlineCount() {
+    io.emit('onlineCount', getOnlineCount());
+}
+
 // Broadcast new messages to appropriate channel
 io.on('connection', socket => {
     console.log(`🛰️  New client connected: ${socket.id}`);
 
+    // Client identifies themselves
+    socket.on('identify', ({ email, name }) => {
+        onlineUsers.set(socket.id, { email: email || 'anonymous', name: name || 'User' });
+        broadcastOnlineCount();
+    });
+
     // Client joins a named room (channel)
     socket.on('joinChannel', (channel) => {
-        // Leave all previous rooms except own socket room
         Object.keys(socket.rooms).forEach(room => {
             if (room !== socket.id) socket.leave(room);
         });
@@ -600,40 +617,100 @@ io.on('connection', socket => {
         console.log(`📡 ${socket.id} joined channel: ${channel}`);
     });
 
-    // Legacy: allow direct sendMessage via socket (not used by REST path but kept for compatibility)
-    socket.on('sendMessage', async ({ channel, text, sender }) => {
+    // Legacy: allow direct sendMessage via socket
+    socket.on('sendMessage', async ({ channel, text, sender, senderName }) => {
         try {
-            const newMsg = new ChatMessage({ sender, text, channel, time: new Date().toLocaleTimeString() });
+            const newMsg = new ChatMessage({ sender, senderName: senderName || sender, text, channel, time: new Date().toLocaleTimeString() });
             await newMsg.save();
-            io.to(channel).emit(`chat:${channel}`, newMsg);
+            io.emit(`chat:${channel}`, newMsg);
         } catch (err) {
             console.error('❌ Chat save error', err);
         }
     });
 
     socket.on('disconnect', () => {
+        onlineUsers.delete(socket.id);
+        broadcastOnlineCount();
         console.log(`🔌 Client disconnected: ${socket.id}`);
     });
 });
 
-// ── Automated CBC News Bot ──
+// ── Online count API ──
+app.get('/api/chat/online/count', (req, res) => {
+    res.json({ count: getOnlineCount() });
+});
+
+// ── Automated CBC News Bot (Twice Daily: 8AM & 6PM EAT) ──
+let lastBotHour = -1;
 setInterval(async () => {
     try {
-        const cbcTips = [
-            "CBC News: Formative assessments should be integrated into every lesson phase.",
-            "Education Update: KICD emphasizes using locally available materials to foster creativity.",
-            "CBC Tip: Peer assessment encourages critical thinking and communication skills.",
-            "CBC Reminder: Ensure all 7 Core Competencies are actively practiced across subjects."
-        ];
-        const tip = cbcTips[Math.floor(Math.random() * cbcTips.length)];
-        const newMsg = new ChatMessage({ sender: "CBC News Bot 🤖", text: tip, channel: 'staff', time: new Date().toLocaleTimeString() });
-        await newMsg.save();
-        io.emit(`chat:staff`, newMsg);
-    } catch (err) {}
-}, 180000); // Broadcast every 3 minutes
+        const now = new Date();
+        // EAT = UTC+3
+        const eatHour = (now.getUTCHours() + 3) % 24;
+        const eatMinute = now.getUTCMinutes();
 
-// ── Chat API ──
-// Fetch recent messages for a channel (limit 50)
+        // Fire at 8:00 AM or 6:00 PM EAT (within first 5 minutes of the hour)
+        const isScheduledTime = (eatHour === 8 || eatHour === 18) && eatMinute < 5;
+        if (!isScheduledTime || lastBotHour === eatHour) return;
+        lastBotHour = eatHour;
+
+        // Prevent duplicates on server restart by checking database
+        const oneHourAgo = Date.now() - 3600000;
+        const recentBotMsgs = await ChatMessage.find({ sender: 'CBC News Bot 🤖' });
+        const hasRecentBotMsg = recentBotMsgs.some(m => m.timestamp >= oneHourAgo);
+        if (hasRecentBotMsg) {
+            console.log("🤖 CBC News Bot: Message already posted recently. Skipping duplicate.");
+            return;
+        }
+
+        let quote = '';
+        const period = eatHour === 8 ? 'morning' : 'evening';
+        try {
+            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+            const prompt = `You are the Pedagogy CBC News Bot for Kenyan teachers. Generate ONE ${period} message for facilitators. Alternate randomly between these types:
+- An inspiring motivational quote about teaching and education (attribute to a famous educator, philosopher, or leader)
+- A practical CBC tip about competency-based curriculum implementation in Kenya
+- A fun fact about education or child development
+- An encouraging reminder about teacher self-care and wellbeing
+- A creative classroom activity idea aligned with KICD CBC
+
+Make it diverse, heartfelt, and ${period === 'morning' ? 'energizing to start the day' : 'reflective to close the day'}. Keep it under 180 characters. Do NOT use markdown. Output ONLY the message text, nothing else.`;
+            const result = await model.generateContent(prompt);
+            quote = result.response.text().trim();
+        } catch (aiErr) {
+            // Fallback quotes if AI fails
+            const fallbacks = [
+                "🌅 'The art of teaching is the art of assisting discovery.' — Mark Van Doren. Have a wonderful day, Mwalimu!",
+                "🌟 CBC Tip: Let learners lead discussions today. Their curiosity is your greatest teaching tool!",
+                "💪 You are shaping Kenya's future, one competency at a time. Keep going, Mwalimu!",
+                "🌙 Reflect on today's wins — every 'aha!' moment you created matters. Rest well, Mwalimu!",
+                "📚 Remember: Assessment is not just testing — it's understanding every learner's unique journey."
+            ];
+            quote = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+        }
+
+        const emoji = eatHour === 8 ? '🌅' : '🌙';
+        const prefix = eatHour === 8 ? 'Good Morning, Mwalimu!' : 'Good Evening, Mwalimu!';
+        const fullText = quote.startsWith(emoji) || quote.startsWith('🌅') || quote.startsWith('🌙') || quote.startsWith('💪') || quote.startsWith('🌟') || quote.startsWith('📚')
+            ? quote
+            : `${emoji} ${prefix} ${quote}`;
+
+        const newMsg = new ChatMessage({
+            sender: 'CBC News Bot 🤖',
+            senderName: 'CBC News Bot 🤖',
+            text: fullText,
+            channel: 'staff',
+            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
+        await newMsg.save();
+        io.emit('chat:staff', newMsg);
+        console.log(`🤖 CBC News Bot posted ${period} message`);
+    } catch (err) {
+        console.error('Bot error:', err.message);
+    }
+}, 60000); // Check every minute
+
+// ── Chat API (Primary REST endpoints) ──
 app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
     const { channel } = req.params;
     try {
@@ -651,13 +728,16 @@ app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
 app.post('/api/chat/:channel', authenticateToken, async (req, res) => {
     const { channel } = req.params;
     const { text } = req.body;
-    const sender = req.user.email;
+    const senderEmail = req.user.email;
     if (!text || !text.trim()) return res.status(400).json({ error: 'Message cannot be empty' });
     try {
+        // Look up sender's display name
+        const user = await User.findOne({ email: senderEmail });
+        const displayName = (user && user.profileTeacher) || senderEmail.split('@')[0];
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const newMsg = new ChatMessage({ sender, text: text.trim(), channel, time });
+        const newMsg = new ChatMessage({ sender: senderEmail, senderName: displayName, text: text.trim(), channel, time });
         await newMsg.save();
-        // Broadcast to ALL connected sockets (channel event scoped by name)
+        // Broadcast to ALL connected sockets
         io.emit(`chat:${channel}`, newMsg);
         res.json(newMsg);
     } catch (err) {
@@ -874,6 +954,14 @@ app.post('/api/generate', authenticateToken, generateRateLimit, async (req, res)
     try {
         const user = await User.findOne({ email: req.user.email });
         const activeWs = req.body.activeWorkspace;
+
+        if (!grade && user) {
+            grade = activeWs == 2 ? user.curriculumGrade2 : user.curriculumGrade1;
+        }
+        if (!subject && user) {
+            subject = activeWs == 2 ? user.curriculumSubject2 : user.curriculumSubject1;
+        }
+
         const wsText = activeWs == 2 ? (user && (user.curriculumText2 || user.curriculumText)) : (user && (user.curriculumText1 || user.curriculumText));
         const curriculumContext = wsText ? `\n\nOFFICIAL CURRICULUM CONTEXT (Strictly apply this to your generated content):\n${wsText}` : '';
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -882,11 +970,12 @@ app.post('/api/generate', authenticateToken, generateRateLimit, async (req, res)
         const TH = `border:1px solid #000;padding:9px;background:#f0f0f0;text-align:left;font-weight:bold;font-size:12px;`;
         const H4 = `font-size:14px;margin:20px 0 8px;text-transform:uppercase;border-bottom:1px solid #ccc;padding-bottom:4px;`;
 
+        const displayTerm = term ? (term.toLowerCase().startsWith('term') ? term : 'Term ' + term) : 'Auto-Detected';
         const adminHeader = `<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px;font-family:Arial,sans-serif;">
 ${user && user.schoolLogo ? `<img src="${user.schoolLogo}" style="max-height:80px; margin-bottom:10px; display:block; margin-left:auto; margin-right:auto;">` : ''}
 <p style="margin:4px 0;font-style:italic;font-size:13px;">Competency-Based Curriculum (CBC)</p>
 <table style="${TS}margin-top:12px;"><tbody>
-<tr><td style="${TD}" width="25%"><strong>Facilitator:</strong> ${teacherName || '________________'}</td><td style="${TD}" width="25%"><strong>Learning Area:</strong> ${subject || '________________'}</td><td style="${TD}" width="25%"><strong>Grade:</strong> ${grade || '________________'}</td><td style="${TD}" width="25%"><strong>Term:</strong> ${term || '________________'}</td></tr>
+<tr><td style="${TD}" width="25%"><strong>Facilitator:</strong> ${teacherName || '________________'}</td><td style="${TD}" width="25%"><strong>Learning Area:</strong> ${subject || '________________'}</td><td style="${TD}" width="25%"><strong>Grade:</strong> ${grade || '________________'}</td><td style="${TD}" width="25%"><strong>Term:</strong> ${displayTerm}</td></tr>
 <tr><td colspan="4" style="${TD}"><strong>Strand/Sub-strand:</strong> ${strand || '________________'}${subStrand ? ' / ' + subStrand : ''}</td></tr>
 </tbody></table></div>`;
 
@@ -918,7 +1007,7 @@ ${user && user.schoolLogo ? `<img src="${user.schoolLogo}" style="max-height:80p
             let prompt = '';
             if (wsText) {
                 prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly extract and strictly align this termly Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
-Learning Area (Subject): ${subject} | Grade: ${grade} | Term: ${term}
+Learning Area (Subject): ${subject} | Grade: ${grade} | Term: ${term || 'Auto-Detect (deduce the term from the strands in the curriculum context)'}
 Target Strands / Sub-strands to include: ${strand}
 ${previousProgress ? `Teacher's Previous Progress (Start the SOW exactly where the teacher left off): ${previousProgress}` : ''}
 Facilitator: ${teacherName}
@@ -932,7 +1021,7 @@ Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Q
 
 Requirements:
 - CRITICAL: DO NOT use AI generation or automation from scratch. You MUST perform a pure, accurate extraction strictly from the provided OFFICIAL CURRICULUM CONTEXT. Do not hallucinate or invent new content.
-- Focus ONLY on the strands specified for this single Term (${term}). Do NOT generate for other terms.
+- Focus ONLY on the strands specified for this single Term (${term || 'automatically detected term'}). Do NOT generate for other terms.
 - 12 weeks, at least 2 lessons per week (24+ rows).
 - SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies.
 - Week 7 = Mid-Term Review; Week 12 = End-Term Assessment.
@@ -941,7 +1030,7 @@ Requirements:
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             } else {
                 prompt = `You are a strict KICD (Kenya Institute of Curriculum Development) CBC curriculum expert. Directly generate and align this termly Scheme of Work (SOW) with the official KICD CBC syllabus designs, learning outcomes, and guidelines for:
-Learning Area (Subject): ${subject} | Grade: ${grade} | Term: ${term}
+Learning Area (Subject): ${subject} | Grade: ${grade} | Term: ${term || 'Auto-Detect (deduce the term from the strands)'}
 Target Strands / Sub-strands to include: ${strand}
 ${previousProgress ? `Teacher's Previous Progress (Start the SOW exactly where the teacher left off): ${previousProgress}` : ''}
 Facilitator: ${teacherName}
@@ -951,7 +1040,7 @@ Output ONE HTML <table> with these 10 columns:
 Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Questions | Core Competencies, Values & PCIs | Learning Resources | Assessment Method | Remarks
 
 Requirements:
-- Focus ONLY on the strands specified for this single Term (${term}). Do NOT generate for other terms.
+- Focus ONLY on the strands specified for this single Term (${term || 'automatically detected term'}). Do NOT generate for other terms.
 - 12 weeks, at least 2 lessons per week (24+ rows).
 - SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies.
 - Week 7 = Mid-Term Review; Week 12 = End-Term Assessment.

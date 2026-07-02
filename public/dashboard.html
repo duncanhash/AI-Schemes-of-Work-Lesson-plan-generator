@@ -17,6 +17,8 @@
 </head>
 
 <body>
+    <!-- Mobile sidebar overlay -->
+    <div id="sidebar-overlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
     <div class="dashboard-layout">
 
         <!-- Sidebar -->
@@ -27,9 +29,9 @@
                         <span id="sidebar-avatar-initials">👤</span>
                         <img id="sidebar-avatar-img" src="" style="display:none;width:100%;height:100%;object-fit:cover;">
                     </div>
-                    <div>
-                        <h2 class="logo" style="margin-bottom:2px;">PEDAGOGY</h2>
-                        <p id="userEmailDisplay" style="font-size:11px; opacity:0.6; margin:0;">Loading...</p>
+                    <div style="min-width: 0; flex: 1;">
+                        <h2 class="logo" style="margin-bottom:2px; font-size: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">PEDAGOGY</h2>
+                        <p id="userEmailDisplay" style="font-size:11px; opacity:0.6; margin:0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">Loading...</p>
                     </div>
                 </div>
             </div>
@@ -138,33 +140,26 @@
                             <p style="font-size:12px; color:var(--muted); margin-top:4px; max-width: 80%; margin-left: auto; margin-right: auto;">Select a file to power the AI SOW generator below.</p>
                             <input type="file" id="sow-curriculum" accept=".pdf,.txt" style="display:none;" onchange="updateFileName(this)">
                             <div id="file-name-display" style="font-size:13px; color:var(--accent2); margin-top:12px; font-weight:bold; display:none;"></div>
+                            <div id="active-curriculum-status" style="font-size:13px; color:#00d4aa; margin-top:12px; font-weight:bold; display:none;"></div>
                             <div style="display:flex; justify-content:center; gap:10px; margin-top:15px; position: relative; z-index: 3;">
                                 <button type="button" class="btn-generate" id="upload-btn" style="background:linear-gradient(135deg, var(--accent), #5643e6); font-size:13px; padding:10px 20px; width: auto;" onclick="handleUploadBtnClick(this)">📁 Browse File</button>
                             </div>
-                            <p id="curriculum-loaded-msg" style="display:none; color:#00d4aa; margin-top:8px; font-size:13px; font-weight:bold;">✅ Curriculum already loaded for this workspace. You can replace it or generate below.</p>
-                        </div>
-                        <!-- Curriculum Preview Box -->
-                        <div id="curriculum-preview" style="display:none; margin-top:14px; padding:14px; background:rgba(124,107,255,0.04); border-radius:10px; border:1px solid var(--border); text-align:left;">
-                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                                <strong style="color:var(--accent); font-size:13px;">📄 Extracted Content &mdash; Workspace <span id="curriculum-ws-label">1</span></strong>
-                                <button onclick="document.getElementById('curriculum-preview').style.display='none'" style="background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:18px; line-height:1;">&times;</button>
-                            </div>
-                            <div id="curriculum-preview-text" style="font-size:12px; line-height:1.5; margin:0; max-height:400px; overflow-y:auto; color:var(--text); font-family:inherit; padding:10px; background:var(--bg); border-radius:6px; border:1px solid rgba(124,107,255,0.1);"></div>
                         </div>
 
                         <!-- Configure & Generate SOW from Curriculum Form -->
                         <div id="curriculum-generator-form" style="margin-top:20px; padding:20px; border:2px dashed var(--accent2); background:rgba(124,107,255,0.02); border-radius:16px;">
                             <h3 style="font-family:'Syne', sans-serif; font-size:18px; color:var(--accent2); margin-bottom:12px; display:flex; align-items:center; gap:8px;">⚡ Configure &amp; Generate SOW from Curriculum</h3>
-                            <p style="font-size:12px; color:var(--muted); margin-bottom:16px;">Configure your term and strand range below, then click Extract &amp; Generate.</p>
+                            <p style="font-size:12px; color:var(--muted); margin-bottom:16px;">Configure your strand range below, then click Extract &amp; Generate.</p>
                             
-                            <div class="input-grid">
-                                <div class="input-group" style="display:none;">
+                            <div class="input-grid" style="display:none;">
+                                <div class="input-group">
                                     <label>Grade Level (Auto-Extracted)</label>
-                                    <input type="text" id="gradeSelect-curriculum" readonly style="background: rgba(124,107,255,0.1); border: 1px solid rgba(124,107,255,0.3); color: var(--muted); cursor: not-allowed;" value="Loading...">
+                                    <input type="text" id="gradeSelect-curriculum" readonly value="">
                                 </div>
                                 <div class="input-group">
                                     <label>Select Target Term</label>
                                     <select id="termSelect-curriculum">
+                                        <option value="" selected>Auto-Detect Term</option>
                                         <option value="1">Term 1</option>
                                         <option value="2">Term 2</option>
                                         <option value="3">Term 3</option>
@@ -498,6 +493,10 @@
 
                     <!-- Chat Main -->
                     <div class="chat-main">
+                        <div class="chat-mobile-toggle">
+                            <button id="btn-mobile-chan-staff" class="active" onclick="setChatChannel('staff')">👨‍🏫 Staff Room</button>
+                            <button id="btn-mobile-chan-parents" onclick="setChatChannel('parent-community')">👪 Parents Hub</button>
+                        </div>
                         <div class="chat-main-header">
                             <div class="channel-avatar" id="current-chat-avatar"
                                 style="background: linear-gradient(135deg, #7c6bff, #5643e6);">👨‍🏫</div>
@@ -507,7 +506,7 @@
                             </div>
                             <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--accent2);">
                                 <span style="display:inline-block; width:8px; height:8px; background:#00d4aa; border-radius:50%; box-shadow:0 0 6px #00d4aa; animation:pulse 2s infinite;"></span>
-                                Live
+                                <span id="online-count-display">1 online</span>
                             </div>
                         </div>
 
@@ -636,7 +635,6 @@
                     </div>
                     <button class="btn-generate" style="margin-top:20px;" onclick="saveProfile()">💾 Save Profile</button>
                     <p id="profile-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Profile Updated</p>
-                    <p id="profile-msg" style="display:none; color:var(--accent2); margin-top:10px;">✅ Profile Updated</p>
                 </div>
             </section>
 
@@ -703,16 +701,11 @@
                 </div>
                 <p id="progress-label">Processing...</p>
             </div>
-            <div class="download-bar" id="download-bar" style="display:none; margin-bottom:20px; text-align:center;">
-                <button class="btn-primary" id="btn-push-lp" onclick="pushSowToLessonPlan()" style="background:linear-gradient(135deg, var(--accent), #5643e6); color:white; font-weight:700; margin-right:10px; display:none;">📝 Push to Lesson Plan</button>
-                <button class="btn-primary" id="btn-save-sow-lib" onclick="saveSOWToLibrary()" style="background:#00d4aa; color:#111; font-weight:700; margin-right:10px; display:none;">💾 Save SOW to Library</button>
-                <button class="btn-primary" onclick="pushToParent()" style="background:var(--accent2); color:white; margin-right:10px;">🚀 Push to Parent Dashboard</button>
-                <button class="btn-primary" onclick="downloadDocx()" style="background:#2b579a;">📥 Download
-                    Word</button>
-                <button class="btn-primary" onclick="downloadHTML()" style="background:#e44d26; margin:0 10px;">🌐
-                    Download HTML</button>
-                <button class="btn-primary" onclick="window.print()" style="background:#444;">🖨️ Print
-                    Document</button>
+            <div class="download-bar" id="download-bar" style="display:none;">
+                <button class="btn-primary save-lib" id="btn-save-sow-lib" onclick="saveSOWToLibrary()" style="display:none;">💾 Save SOW to Library</button>
+                <button class="btn-primary push-parent" onclick="pushToParent()">🚀 Push to Parent Dashboard</button>
+                <button class="btn-primary download-word" onclick="downloadDocx()">📥 Download Word</button>
+                <button class="btn-primary print-doc" onclick="window.print()">🖨️ Print Document</button>
             </div>
             <div id="preview-area" style="display:none;"></div>
 

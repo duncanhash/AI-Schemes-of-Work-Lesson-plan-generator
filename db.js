@@ -90,7 +90,7 @@ if (USE_MONGO) {
         photos: [String], sharedWith: String, timestamp: { type: Number, default: Date.now }
     });
     const chatSchema = new mongoose.Schema({
-        sender: String, text: String, time: String, channel: { type: String, default: 'staff' },
+        sender: String, senderName: String, text: String, time: String, channel: { type: String, default: 'staff' },
         timestamp: { type: Number, default: Date.now }
     });
     const planSchema = new mongoose.Schema({ userEmail: { type: String, unique: true }, data: Object });
