@@ -499,8 +499,16 @@ input:focus, select:focus, textarea:focus {
     color: var(--accent2);
     margin: 0;
     letter-spacing: 0.5px;
-    text-transform: uppercase;
 }
+/* Glowing progress bar pulse when active */
+#progress-bar-inner.active {
+    animation: progressGlow 1.5s ease-in-out infinite alternate;
+}
+@keyframes progressGlow {
+    from { box-shadow: 0 0 8px var(--accent2); }
+    to { box-shadow: 0 0 20px var(--accent2), 0 0 6px var(--accent); }
+}
+
 
 /* Weekly Planner Table */
 .planner-table { width: 100%; border-collapse: collapse; background: #08080c; }
@@ -539,8 +547,9 @@ input:focus, select:focus, textarea:focus {
     max-width: 100%;
 }
 #preview-area table { border-collapse: collapse; width: 100%; margin: 20px 0; border: 1.5px solid #000; }
-#preview-area th, #preview-area td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 13px; }
-#preview-area th { background: #fff; font-weight: bold; } /* No background color */
+#preview-area th, #preview-area td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 13px; color: #111; }
+#preview-area th { background: #e8e6ff; font-weight: bold; color: #111; } /* Visible header background */
+#preview-area h1, #preview-area h2, #preview-area h3, #preview-area h4, #preview-area p, #preview-area td, #preview-area strong { color: #111; }
 
 /* Download Bar */
 .download-bar {
@@ -614,6 +623,15 @@ input:focus, select:focus, textarea:focus {
 }
 .dark .btn-primary.print-doc:hover {
     background: rgba(0, 0, 0, 0.08);
+}
+
+/* Download PDF button */
+.btn-primary.download-pdf {
+    background: linear-gradient(135deg, #00c49a, #00947a);
+    box-shadow: 0 4px 15px rgba(0, 212, 170, 0.25);
+}
+.btn-primary.download-pdf:hover {
+    box-shadow: 0 8px 25px rgba(0, 196, 154, 0.45);
 }
 
 @media (max-width: 900px) {

@@ -130,15 +130,7 @@ function updateUploadPanelState(profile) {
     const activeSubj = activeSubjectNum === 2 ? profile.curriculumSubject2 : profile.curriculumSubject1;
     const activeText = activeSubjectNum === 2 ? (profile.curriculumText2 || profile.curriculumText) : (profile.curriculumText1 || profile.curriculumText);
 
-    const activeStatus = document.getElementById('active-curriculum-status');
-    if (activeStatus) {
-        if (activeText && (activeSubj || activeGrade)) {
-            activeStatus.textContent = `📖 Active Curriculum: ${activeSubj || 'Unknown Subject'} (${activeGrade || 'Unknown Grade'})`;
-            activeStatus.style.display = 'block';
-        } else {
-            activeStatus.style.display = 'none';
-        }
-    }
+
 
     const genForm = document.getElementById('curriculum-generator-form');
     if (genForm) {
@@ -194,16 +186,9 @@ function setupNavigation() {
                 if (preview) preview.style.display = 'none';
                 if (dlBar) dlBar.style.display = 'none';
 
-                // Toggle workspace selector visibility
-                const selector = document.getElementById('subject-workspace-selector');
-                if (selector) {
-                    const userRole = localStorage.getItem('cbc_role') || 'teacher';
-                    if (userRole === 'teacher' && (target === 'view-sow' || target === 'view-planner' || target === 'view-row')) {
-                        selector.style.display = 'block';
-                    } else {
-                        selector.style.display = 'none';
-                    }
-                }
+
+                // Workspace selector was removed from the UI; nothing to toggle here.
+
 
                 // Close sidebar on mobile
                 const sidebar = document.querySelector('.sidebar');
@@ -928,6 +913,40 @@ document.addEventListener('DOMContentLoaded', () => {
     if (viewsContainer) observer.observe(viewsContainer, { subtree: true, attributeFilter: ['class'] });
 });
 
+// ── Client-side Image Compression ──
+async function compressImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                const maxDim = 1200;
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.75));
+            };
+            img.onerror = err => reject(err);
+        };
+        reader.onerror = err => reject(err);
+    });
+}
+
 // ── Portfolio ──
 async function addPortfolioEntry() {
     try {
@@ -938,10 +957,17 @@ async function addPortfolioEntry() {
 
         if (!studentName || !projectTitle || files.length === 0) return showToast("All fields and photos required.", "Warning", "⚠️");
 
+        showProgress(30, "Compressing & uploading photos...");
+
         const photos = [];
         for (let f of files) {
-            if (f.size > 2 * 1024 * 1024) return showToast(`File ${f.name} is too large. Max 2MB per photo.`, "Warning", "⚠️");
-            photos.push(await toBase64(f));
+            try {
+                const compressed = await compressImage(f);
+                photos.push(compressed);
+            } catch (err) {
+                console.error("Compression failed, fallback to base64:", err);
+                photos.push(await toBase64(f));
+            }
         }
 
         const res = await fetch('/api/portfolio', {
@@ -949,6 +975,8 @@ async function addPortfolioEntry() {
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({ studentName, projectTitle, description, photos })
         });
+
+        hideProgress();
 
         if (res.ok) {
             document.getElementById('port-student').value = '';
@@ -959,7 +987,10 @@ async function addPortfolioEntry() {
             updateStorageUsage();
             showToast("Portfolio entry saved!", "Success", "✅");
         }
-    } catch (e) { showFriendlyError(e); }
+    } catch (e) {
+        hideProgress();
+        showFriendlyError(e);
+    }
 }
 
 async function loadPortfolio() {
@@ -970,19 +1001,36 @@ async function loadPortfolio() {
         const res = await fetch('/api/portfolio', { headers: { 'Authorization': `Bearer ${token}` } });
         const items = await res.json();
 
-        grid.innerHTML = items.map(item => `
-            <div class="portfolio-card">
-                <div class="port-header"><h3>${item.projectTitle}</h3><p>Learner: ${item.studentName}</p></div>
-                <div class="port-gallery"><img src="${item.photos[0]}"></div>
-                <div class="port-body">
-                    <p>${item.description ? item.description.substring(0, 60) + '...' : ''}</p>
-                    <div class="port-actions">
-                        <button class="share" onclick="shareWithParent('${item._id}', '${item.studentName}', '${item.projectTitle}', \`${item.description || ''}\`)">📤 Share</button>
-                        <button class="del" onclick="deletePortfolioEntry('${item._id}')">🗑️</button>
+        // Keep local cache for edits
+        window.portfolioItemsCache = items;
+
+        grid.innerHTML = items.map(item => {
+            const galleryHtml = (item.photos || []).map(p => `
+                <div style="width: 100%; height: 100px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border);">
+                    <img src="${p}" style="width: 100%; height: 100%; object-fit: cover; cursor: pointer;" onclick="window.open('${p}', '_blank')">
+                </div>
+            `).join('');
+
+            return `
+                <div class="portfolio-card">
+                    <div class="port-header">
+                        <h3>${item.projectTitle}</h3>
+                        <p>Learner: ${item.studentName}</p>
+                    </div>
+                    <div class="port-gallery" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; padding: 12px;">
+                        ${galleryHtml}
+                    </div>
+                    <div class="port-body">
+                        <p>${item.description || ''}</p>
+                        <div class="port-actions">
+                            <button class="share" onclick="shareWithParent('${item._id}', '${item.studentName}', '${item.projectTitle}', \`${item.description || ''}\`)">📤 Share</button>
+                            <button class="edit" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-weight:600; cursor:pointer;" onclick="openEditPortfolioModal('${item._id}')">✏️ Edit</button>
+                            <button class="del" onclick="deletePortfolioEntry('${item._id}')">🗑️</button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
     } catch (e) { console.error("Portfolio Load Error:", e); }
 }
 
@@ -994,6 +1042,92 @@ async function deletePortfolioEntry(id) {
         showToast("Entry deleted successfully.", "Deleted", "🗑️");
     } catch (e) { showFriendlyError(e); }
 }
+
+// ── Edit Portfolio Controllers ──
+let editPhotosList = [];
+
+window.openEditPortfolioModal = function(id) {
+    const item = (window.portfolioItemsCache || []).find(i => i._id === id);
+    if (!item) return;
+
+    document.getElementById('edit-port-id').value = id;
+    document.getElementById('edit-port-student').value = item.studentName || '';
+    document.getElementById('edit-port-title').value = item.projectTitle || '';
+    document.getElementById('edit-port-description').value = item.description || '';
+    
+    editPhotosList = [...(item.photos || [])];
+    renderEditPhotosList();
+
+    document.getElementById('edit-portfolio-modal').style.display = 'flex';
+};
+
+window.closeEditPortfolioModal = function() {
+    document.getElementById('edit-portfolio-modal').style.display = 'none';
+};
+
+function renderEditPhotosList() {
+    const container = document.getElementById('edit-port-photos-container');
+    if (!container) return;
+
+    container.innerHTML = editPhotosList.map((p, idx) => `
+        <div style="position:relative; width:80px; height:80px;">
+            <img src="${p}" style="width:100%; height:100%; object-fit:cover; border-radius:8px;">
+            <button type="button" onclick="removeEditPhoto(${idx})" style="position:absolute; top:-6px; right:-6px; background:#ff4a4a; color:white; border:none; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:12px; font-weight:bold;">×</button>
+        </div>
+    `).join('');
+}
+
+window.removeEditPhoto = function(idx) {
+    editPhotosList.splice(idx, 1);
+    renderEditPhotosList();
+};
+
+window.savePortfolioEdits = async function() {
+    try {
+        const id = document.getElementById('edit-port-id').value;
+        const studentName = document.getElementById('edit-port-student').value;
+        const projectTitle = document.getElementById('edit-port-title').value;
+        const description = document.getElementById('edit-port-description').value;
+        const newFiles = document.getElementById('edit-port-new-photos').files;
+
+        if (!studentName || !projectTitle) return showToast("Student name and project title are required.", "Warning", "⚠️");
+
+        showProgress(40, "Compressing & saving edits...");
+
+        const newPhotos = [];
+        for (let f of newFiles) {
+            try {
+                const comp = await compressImage(f);
+                newPhotos.push(comp);
+            } catch (err) {
+                newPhotos.push(await toBase64(f));
+            }
+        }
+
+        const finalPhotos = [...editPhotosList, ...newPhotos];
+
+        const res = await fetch(`/api/portfolio/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ studentName, projectTitle, description, photos: finalPhotos })
+        });
+
+        hideProgress();
+
+        if (res.ok) {
+            closeEditPortfolioModal();
+            document.getElementById('edit-port-new-photos').value = '';
+            loadPortfolio();
+            showToast("Portfolio updated successfully!", "Success", "✅");
+        } else {
+            const err = await res.json();
+            throw new Error(err.error || "Update failed");
+        }
+    } catch (e) {
+        hideProgress();
+        showFriendlyError(e);
+    }
+};
 
 async function shareWithParent(recordId, studentName, projectTitle, description) {
     const parentEmail = prompt(`Enter Parent's Email to share ${studentName}'s work:`);
@@ -1195,13 +1329,22 @@ function showProgress(pct, label) {
     const wrap = document.getElementById('progress-wrap');
     if (wrap) {
         wrap.style.display = 'block';
-        document.getElementById('progress-bar-inner').style.width = pct + '%';
+        const inner = document.getElementById('progress-bar-inner');
+        inner.style.width = pct + '%';
+        inner.classList.add('active');
         document.getElementById('progress-label').textContent = label;
+        if (pct <= 30) {
+            wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
     }
 }
 function hideProgress() {
     const wrap = document.getElementById('progress-wrap');
-    if (wrap) wrap.style.display = 'none';
+    if (wrap) {
+        wrap.style.display = 'none';
+        const inner = document.getElementById('progress-bar-inner');
+        if (inner) { inner.classList.remove('active'); inner.style.width = '0%'; }
+    }
 }
 function toBase64(f) {
     return new Promise((res, rej) => {
@@ -1235,7 +1378,50 @@ async function downloadDocx() {
         a.href = URL.createObjectURL(blob);
         a.download = getGeneratedFilename('docx');
         a.click();
-    } catch (e) { showFriendlyError(e); }
+    } catch (err) {
+        showToast(err.message || 'DOCX download failed', 'Error', '❌');
+    }
+}
+
+// ── Print / PDF helpers ──
+function printDocument() {
+    const previewEl = document.getElementById('preview-area');
+    if (!previewEl || !previewEl.innerHTML.trim()) {
+        return showToast('Generate a document first before printing.', 'Notice', 'ℹ️');
+    }
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) return showToast('Pop-up blocked. Please allow pop-ups for this site.', 'Error', '❌');
+    win.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Pedagogy Document</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #fff; color: #000; margin: 20px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #000; padding: 8px; text-align: left; font-size: 12px; }
+  th { background: #f0f0f0; font-weight: bold; color: #000; }
+  h1, h2, h3, h4 { color: #000; margin: 12px 0 6px; }
+  @media print {
+    body { margin: 0; }
+    @page { margin: 1.5cm; }
+  }
+</style>
+</head><body>
+${previewEl.innerHTML}
+</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 500);
+}
+
+async function downloadPDF() {
+    const previewEl = document.getElementById('preview-area');
+    if (!previewEl || !previewEl.innerHTML.trim()) {
+        return showToast('Generate a document first before downloading.', 'Notice', 'ℹ️');
+    }
+    // Use the browser's print-to-PDF in a clean popup window
+    printDocument();
+    showToast('In the print dialog, choose "Save as PDF" as the destination.', 'PDF Download', '📄');
 }
 
 function downloadHTML() {
@@ -1488,15 +1674,8 @@ let userSubject2 = '';
 let activeSubjectNum = 1;
 
 function initWorkspaceSelector(profile) {
-    const selector = document.getElementById('subject-workspace-selector');
-    if (!selector) return;
-
-    const userRole = localStorage.getItem('cbc_role') || profile.role || 'teacher';
-    if (userRole !== 'teacher') {
-        selector.style.display = 'none';
-        return;
-    }
-
+    // The workspace selector cards UI was removed. We still need to set
+    // the active subject fields so auto-fill works across forms.
     userSubject1 = profile.subject1 || '';
     userSubject2 = profile.subject2 || '';
 
@@ -1506,23 +1685,6 @@ function initWorkspaceSelector(profile) {
         userSubject1 = subList[0] || '';
         userSubject2 = subList[1] || '';
     }
-
-    const t1 = document.getElementById('workspace-subject1-title');
-    const t2 = document.getElementById('workspace-subject2-title');
-    const card2 = document.getElementById('workspace-subject2');
-
-    if (t1) t1.textContent = userSubject1 || 'Set in Profile';
-    
-    if (!userSubject2) {
-        // No second subject — show a helpful prompt, dim the card slightly
-        if (t2) t2.textContent = '+ Add 2nd Subject';
-        if (card2) card2.style.opacity = '0.6';
-    } else {
-        if (t2) t2.textContent = userSubject2;
-        if (card2) card2.style.opacity = '1';
-    }
-
-    selector.style.display = 'block';
 
     const savedActive = localStorage.getItem('active_workspace_subject');
     if (savedActive === '2' && userSubject2) {
@@ -1598,7 +1760,6 @@ function initWalkthrough(force = false) {
             const driverObj = driverFunc({
             showProgress: true,
             steps: [
-                { element: '#subject-workspace-selector', popover: { title: 'Workspace Switcher', description: 'Switch between your teaching subjects. Each workspace remembers its own uploaded curriculum.' } },
                 { element: '#curriculum-upload-zone', popover: { title: 'Curriculum Upload', description: 'Upload a PDF or TXT of the curriculum here. We will extract the data to power the AI SOW generator.' } },
                 { element: '#nav-profile', popover: { title: 'Profile Settings', description: 'Configure your school details, classes, and subjects.' } },
                 { element: '[data-target="view-sow"]', popover: { title: 'SOW Generator', description: 'Generate highly accurate Schemes of Work using your uploaded curriculum.' } },

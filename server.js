@@ -298,9 +298,15 @@ app.post('/api/docx', authenticateToken, async (req, res) => {
             let keep = '';
             let mStyle = attrs.match(/style=["']([^"']*)["']/i);
             if (mStyle) {
-                // BUGFIX: html-to-docx v1.8.0 crashes with 'Invalid XML name: @w' when encountering width percentages in inline styles on certain elements (like td).
-                let safeStyle = mStyle[1].replace(/width\s*:\s*\d+%\s*;?/gi, '');
+                // BUGFIX: html-to-docx crashes on width percentages in inline styles.
+                let safeStyle = mStyle[1]
+                    .replace(/width\s*:\s*[\d.]+%\s*;?/gi, '')
+                    .replace(/font-family\s*:[^;]+;?/gi, '')
+                    .replace(/backdrop-filter[^;]*;?/gi, '');
                 keep += ` style="${safeStyle}"`;
+            } else if (['td', 'th'].includes(tag.toLowerCase())) {
+                // Inject default border+padding if no inline style present
+                keep += ` style="border:1px solid #000;padding:6px 8px;vertical-align:top;"`;
             }
 
             let mCol = attrs.match(/colspan=["']([^"']*)["']/i);
@@ -315,8 +321,21 @@ app.post('/api/docx', authenticateToken, async (req, res) => {
             return `<${tag}${keep}>`;
         });
 
-        const buffer = await htmlToDocx(cleanHtml, null, {
-            margins: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
+        // Wrap in a full HTML document with embedded Word-compatible CSS
+        const docHtml = `<html><head><style>
+            body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #000; }
+            table { border-collapse: collapse; width: 100%; margin: 10pt 0; }
+            th, td { border: 1px solid #000; padding: 6px 8px; vertical-align: top; font-size: 10pt; }
+            th { background: #f0f0f0; font-weight: bold; }
+            h1, h2, h3, h4 { font-family: Arial, sans-serif; color: #000; margin: 10pt 0 4pt; }
+            p { margin: 4pt 0; line-height: 1.5; }
+            div { line-height: 1.5; }
+        </style></head><body>${cleanHtml}</body></html>`;
+
+        const buffer = await htmlToDocx(docHtml, null, {
+            margins: { top: 1080, bottom: 1080, left: 1080, right: 1080 },
+            font: 'Arial',
+            fontSize: 22
         });
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.send(buffer);
@@ -922,6 +941,28 @@ app.delete('/api/portfolio/:id', authenticateToken, async (req, res) => {
         await Portfolio.findOneAndDelete({ _id: req.params.id, userEmail: req.user.email });
         res.json({ message: 'Deleted' });
     } catch (err) { res.status(500).json({ error: 'Delete failed' }); }
+});
+
+app.put('/api/portfolio/:id', authenticateToken, async (req, res) => {
+    const { studentName, projectTitle, description, photos } = req.body;
+    try {
+        const item = await Portfolio.findOne({ _id: req.params.id, userEmail: req.user.email });
+        if (!item) return res.status(404).json({ error: 'Entry not found' });
+
+        // Process base64 photos and save them to local files to conserve MongoDB database storage
+        const savedPhotos = (photos || []).map(p => saveBase64Image(p));
+
+        item.studentName = studentName;
+        item.projectTitle = projectTitle;
+        item.description = description;
+        item.photos = savedPhotos;
+
+        await item.save();
+        res.json(item);
+    } catch (err) {
+        console.error("Portfolio Update Error:", err);
+        res.status(500).json({ error: 'Failed to update portfolio entry' });
+    }
 });
 
 // ── Weekly Planner Endpoints ──
