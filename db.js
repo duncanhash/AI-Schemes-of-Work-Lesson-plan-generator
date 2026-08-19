@@ -83,8 +83,13 @@ if (USE_MONGO) {
         subject1: String, subject2: String,
         profileTeacher: String, profileSchool: String,
         profilePicture: String,
-        resetOtp: String, resetExpiry: Date
-    });
+        resetOtp: String, resetExpiry: Date,
+
+        // ── New fields ──
+        lastLogin: { type: Date, default: Date.now },
+        loggedOutAt: { type: Date },
+        plan: { type: String, default: 'free', enum: ['free', 'pro', 'school'] }
+        });
     const portfolioSchema = new mongoose.Schema({
         userEmail: String, studentName: String, projectTitle: String, description: String,
         photos: [String], sharedWith: String, timestamp: { type: Number, default: Date.now }
