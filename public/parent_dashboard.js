@@ -140,7 +140,7 @@ function initParentChatSocket() {
     chatSocket = io();
 
     chatSocket.on('connect', () => {
-        console.log('🛰️  Parent socket connected:', chatSocket.id);
+        console.log('  Parent socket connected:', chatSocket.id);
         chatSocket.emit('joinChannel', 'parent-community');
     });
 
@@ -192,7 +192,7 @@ async function loadMessages() {
         const messages = await res.json();
 
         if (!messages.length) {
-            chatBox.innerHTML = `<div class="chat-info" style="text-align:center;padding:40px;opacity:0.4;">No messages yet. Be the first to post! 👋</div>`;
+            chatBox.innerHTML = `<div class="chat-info" style="text-align:center;padding:40px;opacity:0.4;">No messages yet. Be the first to post! </div>`;
             return;
         }
         chatBox.innerHTML = messages.map(buildParentBubble).join('');

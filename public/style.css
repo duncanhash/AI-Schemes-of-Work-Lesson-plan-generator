@@ -73,6 +73,7 @@ body::before {
 /* Sidebar */
 .sidebar {
     width: 280px;
+    flex: 0 0 280px;
     background: rgba(13, 13, 20, 0.85);
     backdrop-filter: blur(20px);
     border-right: 1px solid rgba(255,255,255,0.05);
@@ -80,7 +81,27 @@ body::before {
     flex-direction: column;
     padding: 30px 20px;
     box-shadow: 4px 0 24px rgba(0,0,0,0.3);
+    overflow-x: hidden;
+    transition: flex-basis 0.25s ease, width 0.25s ease, padding 0.25s ease;
 }
+.dashboard-layout.sidebar-collapsed .sidebar {
+    width: 0;
+    flex-basis: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-right: 0;
+}
+.sidebar-toggle-btn {
+    flex-shrink: 0;
+    padding: 9px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font: 600 13px 'Outfit', sans-serif;
+    cursor: pointer;
+}
+.sidebar-toggle-btn:hover { border-color: var(--accent); }
 .logo {
     font-family: 'Syne', sans-serif;
     font-size: 20px;
@@ -642,6 +663,7 @@ input:focus, select:focus, textarea:focus {
         top: 0;
         height: 100vh;
         width: 280px;
+        flex: none;
         z-index: 1000;
         transition: left 0.3s ease;
         border-right: 1px solid var(--border);
@@ -650,8 +672,16 @@ input:focus, select:focus, textarea:focus {
     .sidebar.open {
         left: 0;
     }
-    .mobile-menu-btn {
-        display: block !important;
+    .dashboard-layout.sidebar-collapsed .sidebar {
+        width: 280px;
+        flex: none;
+        padding: 30px 20px;
+        border-right: 1px solid var(--border);
+    }
+    .sidebar-toggle-btn {
+        display: block;
+        padding: 8px 10px;
+        font-size: 12px;
     }
     .sidebar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; }
     .sidebar-nav { 
@@ -725,10 +755,6 @@ input:focus, select:focus, textarea:focus {
 .toast-notification.show {
     transform: translateY(0);
     opacity: 1;
-}
-.toast-notification .toast-icon {
-    font-size: 20px;
-    flex-shrink: 0;
 }
 .toast-notification .toast-body {
     flex: 1;

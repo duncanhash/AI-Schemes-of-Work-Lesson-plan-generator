@@ -17,3 +17,5 @@ services:
         sync: false
       - key: MONGODB_URI
         sync: false
+      - key: ENABLE_CBC_NEWS_BOT
+        value: false

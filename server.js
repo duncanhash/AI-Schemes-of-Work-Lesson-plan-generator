@@ -14,8 +14,6 @@ const { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, LearnerProgress, con
 
 const upload = multer({ dest: 'uploads/' });
 
-connectDB();
-
 const app = express();
 const port = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'cbc_prod_secure_928173645';
@@ -619,7 +617,7 @@ function broadcastOnlineCount() {
 
 // Broadcast new messages to appropriate channel
 io.on('connection', socket => {
-    console.log(`🛰️  New client connected: ${socket.id}`);
+    console.log(`New client connected: ${socket.id}`);
 
     // Client identifies themselves
     socket.on('identify', ({ email, name }) => {
@@ -633,7 +631,7 @@ io.on('connection', socket => {
             if (room !== socket.id) socket.leave(room);
         });
         socket.join(channel);
-        console.log(`📡 ${socket.id} joined channel: ${channel}`);
+        console.log(`${socket.id} joined channel: ${channel}`);
     });
 
     // Legacy: allow direct sendMessage via socket
@@ -643,14 +641,14 @@ io.on('connection', socket => {
             await newMsg.save();
             io.emit(`chat:${channel}`, newMsg);
         } catch (err) {
-            console.error('❌ Chat save error', err);
+            console.error('Chat save error', err);
         }
     });
 
     socket.on('disconnect', () => {
         onlineUsers.delete(socket.id);
         broadcastOnlineCount();
-        console.log(`🔌 Client disconnected: ${socket.id}`);
+        console.log(`Client disconnected: ${socket.id}`);
     });
 });
 
@@ -659,7 +657,8 @@ app.get('/api/chat/online/count', (req, res) => {
     res.json({ count: getOnlineCount() });
 });
 
-// ── Automated CBC News Bot (Twice Daily: 8AM & 6PM EAT) ──
+// ── Automated CBC News Bot (opt-in; off by default) ──
+if (process.env.ENABLE_CBC_NEWS_BOT === 'true') {
 let lastBotHour = -1;
 setInterval(async () => {
     try {
@@ -675,10 +674,10 @@ setInterval(async () => {
 
         // Prevent duplicates on server restart by checking database
         const oneHourAgo = Date.now() - 3600000;
-        const recentBotMsgs = await ChatMessage.find({ sender: 'CBC News Bot 🤖' });
+        const recentBotMsgs = await ChatMessage.find({ sender: /^CBC News Bot/ });
         const hasRecentBotMsg = recentBotMsgs.some(m => m.timestamp >= oneHourAgo);
         if (hasRecentBotMsg) {
-            console.log("🤖 CBC News Bot: Message already posted recently. Skipping duplicate.");
+            console.log("CBC News Bot: Message already posted recently. Skipping duplicate.");
             return;
         }
 
@@ -693,41 +692,41 @@ setInterval(async () => {
 - An encouraging reminder about teacher self-care and wellbeing
 - A creative classroom activity idea aligned with KICD CBC
 
-Make it diverse, heartfelt, and ${period === 'morning' ? 'energizing to start the day' : 'reflective to close the day'}. Keep it under 180 characters. Do NOT use markdown. Output ONLY the message text, nothing else.`;
+Make it diverse, heartfelt, and ${period === 'morning' ? 'energizing to start the day' : 'reflective to close the day'}. Keep it under 180 characters. Do NOT use markdown or emojis. Output ONLY the message text, nothing else.`;
             const result = await model.generateContent(prompt);
             quote = result.response.text().trim();
         } catch (aiErr) {
             // Fallback quotes if AI fails
             const fallbacks = [
-                "🌅 'The art of teaching is the art of assisting discovery.' — Mark Van Doren. Have a wonderful day, Mwalimu!",
-                "🌟 CBC Tip: Let learners lead discussions today. Their curiosity is your greatest teaching tool!",
-                "💪 You are shaping Kenya's future, one competency at a time. Keep going, Mwalimu!",
-                "🌙 Reflect on today's wins — every 'aha!' moment you created matters. Rest well, Mwalimu!",
-                "📚 Remember: Assessment is not just testing — it's understanding every learner's unique journey."
+                "The art of teaching is the art of assisting discovery. — Mark Van Doren. Have a wonderful day, Mwalimu!",
+                "CBC Tip: Let learners lead discussions today. Their curiosity is your greatest teaching tool!",
+                "You are shaping Kenya's future, one competency at a time. Keep going, Mwalimu!",
+                "Reflect on today's wins — every 'aha!' moment you created matters. Rest well, Mwalimu!",
+                "Remember: Assessment is not just testing — it's understanding every learner's unique journey."
             ];
             quote = fallbacks[Math.floor(Math.random() * fallbacks.length)];
         }
 
-        const emoji = eatHour === 8 ? '🌅' : '🌙';
         const prefix = eatHour === 8 ? 'Good Morning, Mwalimu!' : 'Good Evening, Mwalimu!';
-        const fullText = quote.startsWith(emoji) || quote.startsWith('🌅') || quote.startsWith('🌙') || quote.startsWith('💪') || quote.startsWith('🌟') || quote.startsWith('📚')
-            ? quote
-            : `${emoji} ${prefix} ${quote}`;
+        const fullText = `${prefix} ${quote}`;
 
         const newMsg = new ChatMessage({
-            sender: 'CBC News Bot 🤖',
-            senderName: 'CBC News Bot 🤖',
+            sender: 'CBC News Bot',
+            senderName: 'CBC News Bot',
             text: fullText,
             channel: 'staff',
             time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         });
         await newMsg.save();
         io.emit('chat:staff', newMsg);
-        console.log(`🤖 CBC News Bot posted ${period} message`);
+        console.log(`CBC News Bot posted ${period} message`);
     } catch (err) {
         console.error('Bot error:', err.message);
     }
 }, 60000); // Check every minute
+} else {
+    console.log('CBC News Bot disabled');
+}
 
 // ── Chat API (Primary REST endpoints) ──
 app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
@@ -792,10 +791,6 @@ app.get('/api/parent/progress', authenticateToken, async (req, res) => {
     } catch (err) { res.status(500).json({ error: 'Failed to fetch shared progress records' }); }
 });
 
-// Start server with Socket.io
-server.listen(process.env.PORT || 3000, () => {
-    console.log('🚀 Server with Socket.io listening on port', process.env.PORT || 3000);
-});
 app.post('/api/sow', authenticateToken, async (req, res) => {
     const { title, grade, subject, term, strands, html } = req.body;
     if (!title || !grade || !subject || !term || !strands || !html) {
@@ -965,6 +960,19 @@ app.put('/api/portfolio/:id', authenticateToken, async (req, res) => {
     }
 });
 
+async function startServer() {
+    try {
+        await connectDB();
+        server.listen(port, () => {
+            console.log('Server with Socket.io listening on port', port);
+        });
+    } catch (err) {
+        console.error('DATABASE STARTUP ERROR:', err.message);
+        process.exit(1);
+    }
+}
+
+startServer();
 // ── Weekly Planner Endpoints ──
 app.get('/api/planner', authenticateToken, async (req, res) => {
     try {
@@ -1342,7 +1350,7 @@ Use learner-friendly language. Output HTML sections (<h4 style="${H4}">):
 1. MY LEARNING GOALS — <table>: Goal | Did I achieve it? (Yes/Partly/Not Yet) | Evidence (4-5 goals)
 2. HOW I LEARNT TODAY — <table>: Strategy | I used this ✓ | Comments (Group work, Observation, Research, Experiment, Drawing, Presentation)
 3. MY REFLECTION — <table>: What I learnt | What I found challenging | How I will improve | One question I still have
-4. MY EFFORT RATING — <p> with 5 stars: ★★★★★ (learner circles one) and a blank line for reason
+4. MY EFFORT RATING — <p> with 5 stars:  (learner circles one) and a blank line for reason
 5. FACILITATOR'S FEEDBACK — blank lined <table> for written feedback + signature line
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
             const r = await model.generateContent(prompt);

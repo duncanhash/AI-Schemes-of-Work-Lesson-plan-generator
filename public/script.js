@@ -6,7 +6,7 @@
 console.log("Pedagogy Engine: Initializing...");
 
 // ── Toast Notification System ──
-function showToast(message, title = '', icon = '💬', duration = 4000, onClick = null) {
+function showToast(message, title = '', icon = '', duration = 4000, onClick = null) {
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
@@ -16,7 +16,7 @@ function showToast(message, title = '', icon = '💬', duration = 4000, onClick 
     }
     const toast = document.createElement('div');
     toast.className = 'toast-notification';
-    toast.innerHTML = `<span class="toast-icon">${icon}</span><div class="toast-body">${title ? `<div class="toast-title">${title}</div>` : ''}<span>${message}</span></div>`;
+    toast.innerHTML = `<div class="toast-body">${title ? `<div class="toast-title">${title}</div>` : ''}<span>${message}</span></div>`;
     if (onClick) toast.onclick = onClick;
     container.appendChild(toast);
     requestAnimationFrame(() => requestAnimationFrame(() => toast.classList.add('show')));
@@ -30,11 +30,11 @@ function showToast(message, title = '', icon = '💬', duration = 4000, onClick 
 function showFriendlyError(err) {
     const msg = (err && err.message) || String(err) || '';
     if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('fetch')) {
-        showToast('Please check your internet connection and try again.', '⚠️ Connection Issue', '📡', 5000);
+        showToast('Please check your internet connection and try again.', ' Connection Issue', '', 5000);
     } else if (msg.includes('rate') || msg.includes('429') || msg.includes('limit')) {
-        showToast('You\'ve reached the usage limit. Please wait a moment and try again.', '⏳ Rate Limited', '⏳', 5000);
+        showToast('You\'ve reached the usage limit. Please wait a moment and try again.', ' Rate Limited', '', 5000);
     } else {
-        showToast(msg.length > 100 ? 'Something went wrong. Please try again.' : msg, '⚠️ Error', '❌', 5000);
+        showToast(msg.length > 100 ? 'Something went wrong. Please try again.' : msg, ' Error', '', 5000);
     }
 }
 
@@ -62,6 +62,7 @@ window.addEventListener('DOMContentLoaded', () => {
     console.log("Pedagogy Engine: Dashboard DOM Ready.");
 
     try {
+        updateSidebarToggleState();
         setupNavigation();
         populateProfileFields();
         loadPortfolio();
@@ -139,7 +140,7 @@ function updateUploadPanelState(profile) {
 
     const btn = document.getElementById('upload-btn');
     if (btn) {
-        btn.innerHTML = '📁 Browse File';
+        btn.innerHTML = ' Browse File';
         btn.onclick = function() {
             handleUploadBtnClick(this);
         };
@@ -194,6 +195,9 @@ function setupNavigation() {
                 const sidebar = document.querySelector('.sidebar');
                 if (sidebar && window.innerWidth <= 900) {
                     sidebar.classList.remove('open');
+                    const overlay = document.getElementById('sidebar-overlay');
+                    if (overlay) overlay.classList.remove('active');
+                    updateSidebarToggleState();
                 }
             } catch (err) {
                 console.error("Navigation error:", err);
@@ -209,23 +213,51 @@ function logout() {
 }
 
 window.toggleSidebar = function() {
+    const layout = document.querySelector('.dashboard-layout');
     const sidebar = document.querySelector('.sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    if (sidebar) {
+    if (!layout || !sidebar) return;
+
+    if (window.matchMedia('(max-width: 900px)').matches) {
         sidebar.classList.toggle('open');
         if (overlay) overlay.classList.toggle('active', sidebar.classList.contains('open'));
+    } else {
+        layout.classList.toggle('sidebar-collapsed');
     }
+    updateSidebarToggleState();
 };
+
+function updateSidebarToggleState() {
+    const layout = document.querySelector('.dashboard-layout');
+    const sidebar = document.querySelector('.sidebar');
+    const toggle = document.getElementById('sidebarToggle');
+    if (!layout || !sidebar || !toggle) return;
+
+    const isMobile = window.matchMedia('(max-width: 900px)').matches;
+    if (!isMobile && sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        document.getElementById('sidebar-overlay')?.classList.remove('active');
+    }
+    const expanded = isMobile ? sidebar.classList.contains('open') : !layout.classList.contains('sidebar-collapsed');
+    const label = isMobile ? (expanded ? 'Close navigation' : 'Open navigation') : (expanded ? 'Hide menu' : 'Show menu');
+    toggle.textContent = isMobile ? (expanded ? 'Close' : 'Menu') : (expanded ? 'Hide menu' : 'Show menu');
+    toggle.setAttribute('aria-label', label);
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.title = label;
+};
+
+window.addEventListener('resize', updateSidebarToggleState);
 
 // Close sidebar when clicking outside on mobile
 document.addEventListener('click', (e) => {
     const sidebar = document.querySelector('.sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    const menuBtn = document.querySelector('.mobile-menu-btn');
+    const menuBtn = document.querySelector('.sidebar-toggle-btn');
     if (sidebar && sidebar.classList.contains('open')) {
         if (!sidebar.contains(e.target) && (!menuBtn || !menuBtn.contains(e.target))) {
             sidebar.classList.remove('open');
             if (overlay) overlay.classList.remove('active');
+            updateSidebarToggleState();
         }
     }
 });
@@ -302,7 +334,7 @@ async function fetchStrandsDropdown() {
     const subject = document.getElementById('sow-subject').value;
     const term = document.getElementById('termSelect-sow').value;
 
-    if (!subject) return showToast("Please enter a subject first.", "Warning", "⚠️");
+    if (!subject) return showToast("Please enter a subject first.", "Warning", "");
 
     select.innerHTML = '<option value="" disabled selected>Fetching KICD Strands...</option>';
 
@@ -379,11 +411,11 @@ function toggleGenType(type) {
         if (isLpLibraryMode && hasSow) {
             if (guideBtn) guideBtn.style.display = 'block';
             if (lessonNumGroup) lessonNumGroup.style.display = 'block';
-            if (generateBtn) generateBtn.innerText = '⚡ Extract Lesson Plan (No AI)';
+            if (generateBtn) generateBtn.innerText = ' Extract Lesson Plan (No AI)';
         } else {
             if (guideBtn) guideBtn.style.display = 'block';
             if (lessonNumGroup) lessonNumGroup.style.display = 'none';
-            if (generateBtn) generateBtn.innerText = '⚡ Generate Lesson Plan';
+            if (generateBtn) generateBtn.innerText = ' Generate Lesson Plan';
         }
     }
 }
@@ -481,7 +513,7 @@ async function generateDocument(isTemplate = false) {
             payload.extraInstructions = document.getElementById('extra-lp').value || '';
         }
 
-        if (!isTemplate && !payload.sowId && (!payload.subject || !payload.strand)) return showToast("Subject and Strands are required.", "Warning", "⚠️");
+        if (!isTemplate && !payload.sowId && (!payload.subject || !payload.strand)) return showToast("Subject and Strands are required.", "Warning", "");
 
         showProgress(20, "Referring to KICD format...");
         setTimeout(() => showProgress(50, "Mapping learning outcomes..."), 1000);
@@ -534,7 +566,7 @@ async function generateSowFromCurriculum() {
         } else {
             const activeText = activeSubjectNum === 2 ? (userProfileCache.curriculumText2 || userProfileCache.curriculumText) : (userProfileCache.curriculumText1 || userProfileCache.curriculumText);
             if (!activeText) {
-                return showToast("Please select a curriculum file to upload, or switch to a workspace that has one.", "Warning", "⚠️");
+                return showToast("Please select a curriculum file to upload, or switch to a workspace that has one.", "Warning", "");
             }
         }
 
@@ -547,7 +579,7 @@ async function generateSowFromCurriculum() {
         let extraInstructions = document.getElementById('extra-curriculum').value || '';
 
         if (!strandRange) {
-            return showToast("Strand Range is required to generate SOW.", "Warning", "⚠️");
+            return showToast("Strand Range is required to generate SOW.", "Warning", "");
         }
 
         showProgress(20, "Referring to curriculum text...");
@@ -621,7 +653,7 @@ async function generateProject() {
             schoolName: document.getElementById('profile-school').value || 'Institution'
         };
 
-        if (!payload.projectTitle || !payload.projectOutcomes) return showToast('Project Title and Learning Outcomes are required.', 'Warning', '⚠️');
+        if (!payload.projectTitle || !payload.projectOutcomes) return showToast('Project Title and Learning Outcomes are required.', 'Warning', '');
 
         showProgress(20, 'Designing project guide...');
         setTimeout(() => showProgress(60, 'Building phases and rubric...'), 1200);
@@ -725,7 +757,7 @@ function initChatSocket() {
     chatSocket = io();
 
     chatSocket.on('connect', () => {
-        console.log('🛰️  Chat socket connected:', chatSocket.id);
+        console.log('  Chat socket connected:', chatSocket.id);
         chatSocket.emit('joinChannel', currentChatChannel);
         identifySocket();
     });
@@ -753,7 +785,7 @@ function initChatSocket() {
                     showToast(
                         `${senderLabel}: ${msg.text}`, 
                         `New Message in ${channelName}`, 
-                        ch === 'staff' ? '👨‍🏫' : '👪', 
+                        ch === 'staff' ? '' : '',
                         5000, 
                         () => {
                             const chatBtn = document.querySelector('[data-target="view-chat"]');
@@ -787,7 +819,7 @@ function setChatChannel(chan) {
     const statusEl = document.getElementById('chat-online-status');
     if (title && avatar) {
         title.innerText = chan === 'staff' ? 'Staff Room' : 'Parents Hub';
-        avatar.innerText = chan === 'staff' ? '👨‍🏫' : '👪';
+        avatar.innerText = chan === 'staff' ? 'S' : 'P';
         avatar.style.background = chan === 'staff'
             ? 'linear-gradient(135deg, #7c6bff, #5643e6)'
             : 'linear-gradient(135deg, #00d4aa, #00a388)';
@@ -801,16 +833,17 @@ window.setChatChannel = setChatChannel;
 
 function buildChatBubble(m) {
     const isMine = m.sender === userEmail;
-    const isBot = m.sender && (m.sender.includes('Bot') || m.sender.includes('🤖'));
+    const isBot = m.sender && m.sender.includes('Bot');
     const sidebarImg = document.getElementById('sidebar-avatar-img');
     const sidebarInitials = document.getElementById('sidebar-avatar-initials');
     const myPic = sidebarImg && sidebarImg.style.display !== 'none' ? sidebarImg.src : null;
     const myInitials = sidebarInitials ? sidebarInitials.textContent : '?';
     // Use senderName (display name) if available, fallback to email-based display
-    const senderLabel = isBot ? m.sender : isMine ? 'You' : (m.senderName || m.sender.split('@')[0]);
+    const senderLabel = stripEmoji(isBot ? m.sender : isMine ? 'You' : (m.senderName || m.sender.split('@')[0]));
+    const messageText = stripEmoji(m.text || '');
 
     const avatarHtml = isBot
-        ? `<div class="chat-avatar" style="background:linear-gradient(135deg,#00d4aa,#00a388);font-size:18px;">🤖</div>`
+        ? `<div class="chat-avatar" style="background:linear-gradient(135deg,#00d4aa,#00a388);font-size:14px;">B</div>`
         : isMine
             ? (myPic
                 ? `<div class="chat-avatar"><img src="${myPic}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"></div>`
@@ -822,11 +855,15 @@ function buildChatBubble(m) {
             ${!isMine ? avatarHtml : ''}
             <div class="chat-bubble">
                 <span class="chat-sender">${senderLabel}</span>
-                <span>${m.text}</span>
+                <span>${messageText}</span>
                 <span class="chat-time">${m.time || ''}</span>
             </div>
             ${isMine ? avatarHtml : ''}
         </div>`;
+}
+
+function stripEmoji(value) {
+    return String(value).replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\uFE0F\u200D\u20E3]/gu, '');
 }
 
 function appendChatMessage(msg) {
@@ -849,7 +886,7 @@ async function loadChat() {
         const messages = await res.json();
 
         if (!messages.length) {
-            container.innerHTML = `<div class="chat-info" style="text-align:center;padding:40px;opacity:0.4;">No messages yet. Start the conversation! 👋</div>`;
+            container.innerHTML = `<div class="chat-info" style="text-align:center;padding:40px;opacity:0.4;">No messages yet. Start the conversation! </div>`;
             return;
         }
         container.innerHTML = messages.map(buildChatBubble).join('');
@@ -955,7 +992,7 @@ async function addPortfolioEntry() {
         const description = document.getElementById('port-description').value;
         const files = document.getElementById('port-photos').files;
 
-        if (!studentName || !projectTitle || files.length === 0) return showToast("All fields and photos required.", "Warning", "⚠️");
+        if (!studentName || !projectTitle || files.length === 0) return showToast("All fields and photos required.", "Warning", "");
 
         showProgress(30, "Compressing & uploading photos...");
 
@@ -985,7 +1022,7 @@ async function addPortfolioEntry() {
             document.getElementById('port-photos').value = '';
             loadPortfolio();
             updateStorageUsage();
-            showToast("Portfolio entry saved!", "Success", "✅");
+            showToast("Portfolio entry saved!", "Success", "");
         }
     } catch (e) {
         hideProgress();
@@ -1023,9 +1060,9 @@ async function loadPortfolio() {
                     <div class="port-body">
                         <p>${item.description || ''}</p>
                         <div class="port-actions">
-                            <button class="share" onclick="shareWithParent('${item._id}', '${item.studentName}', '${item.projectTitle}', \`${item.description || ''}\`)">📤 Share</button>
-                            <button class="edit" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-weight:600; cursor:pointer;" onclick="openEditPortfolioModal('${item._id}')">✏️ Edit</button>
-                            <button class="del" onclick="deletePortfolioEntry('${item._id}')">🗑️</button>
+                            <button class="share" onclick="shareWithParent('${item._id}', '${item.studentName}', '${item.projectTitle}', \`${item.description || ''}\`)"> Share</button>
+                            <button class="edit" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-weight:600; cursor:pointer;" onclick="openEditPortfolioModal('${item._id}')"> Edit</button>
+                            <button class="del" onclick="deletePortfolioEntry('${item._id}')"></button>
                         </div>
                     </div>
                 </div>
@@ -1039,7 +1076,7 @@ async function deletePortfolioEntry(id) {
     try {
         await fetch(`/api/portfolio/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
         loadPortfolio();
-        showToast("Entry deleted successfully.", "Deleted", "🗑️");
+        showToast("Entry deleted successfully.", "Deleted", "");
     } catch (e) { showFriendlyError(e); }
 }
 
@@ -1090,7 +1127,7 @@ window.savePortfolioEdits = async function() {
         const description = document.getElementById('edit-port-description').value;
         const newFiles = document.getElementById('edit-port-new-photos').files;
 
-        if (!studentName || !projectTitle) return showToast("Student name and project title are required.", "Warning", "⚠️");
+        if (!studentName || !projectTitle) return showToast("Student name and project title are required.", "Warning", "");
 
         showProgress(40, "Compressing & saving edits...");
 
@@ -1118,7 +1155,7 @@ window.savePortfolioEdits = async function() {
             closeEditPortfolioModal();
             document.getElementById('edit-port-new-photos').value = '';
             loadPortfolio();
-            showToast("Portfolio updated successfully!", "Success", "✅");
+            showToast("Portfolio updated successfully!", "Success", "");
         } else {
             const err = await res.json();
             throw new Error(err.error || "Update failed");
@@ -1148,8 +1185,8 @@ async function shareWithParent(recordId, studentName, projectTitle, description)
             body: JSON.stringify({ parentEmail, studentName, projectTitle, portfolioHtml, recordId })
         });
         const data = await res.json();
-        if (res.ok) showToast("Shared successfully!", "Success", "✅");
-        else showToast(data.error || "Failed to share", "Error", "❌");
+        if (res.ok) showToast("Shared successfully!", "Success", "");
+        else showToast(data.error || "Failed to share", "Error", "");
     } catch (e) { showFriendlyError(e); }
 }
 
@@ -1201,7 +1238,7 @@ async function savePlanner() {
             body: JSON.stringify({ data: plannerData })
         });
         if (res.ok) {
-            showToast("Weekly Plan Saved to Cloud!", "Success", "✅");
+            showToast("Weekly Plan Saved to Cloud!", "Success", "");
             updateStorageUsage();
         }
     } catch (e) { showFriendlyError(e); }
@@ -1211,7 +1248,7 @@ async function savePlanner() {
 let pendingProfilePicBase64 = null;
 
 function setProfilePictureUI(picUrl, name) {
-    const initials = name ? name.trim().split(' ').map(p => p[0]).join('').toUpperCase().substring(0, 2) : '👤';
+    const initials = name ? name.trim().split(' ').map(p => p[0]).join('').toUpperCase().substring(0, 2) : '?';
     
     // Sidebar avatar
     const sidebarImg = document.getElementById('sidebar-avatar-img');
@@ -1247,7 +1284,7 @@ function setProfilePictureUI(picUrl, name) {
 window.previewProfilePicture = function(input) {
     const file = input.files[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) return showToast('Photo must be under 2MB.', 'Warning', '⚠️');
+    if (file.size > 2 * 1024 * 1024) return showToast('Photo must be under 2MB.', 'Warning', '');
     toBase64(file).then(base64 => {
         pendingProfilePicBase64 = base64;
         // Show preview immediately
@@ -1270,7 +1307,7 @@ async function saveProfile() {
 
         // Limit to 2 subjects
         const subList = subjects.split(',').map(s => s.trim()).filter(s => s);
-        if (subList.length > 2) return showToast('Teachers are limited to a maximum of 2 subjects.', 'Warning', '⚠️');
+        if (subList.length > 2) return showToast('Teachers are limited to a maximum of 2 subjects.', 'Warning', '');
 
         const body = { name, school, subjects };
         if (pendingProfilePicBase64) body.profilePicture = pendingProfilePicBase64;
@@ -1379,7 +1416,7 @@ async function downloadDocx() {
         a.download = getGeneratedFilename('docx');
         a.click();
     } catch (err) {
-        showToast(err.message || 'DOCX download failed', 'Error', '❌');
+        showToast(err.message || 'DOCX download failed', 'Error', '');
     }
 }
 
@@ -1387,10 +1424,10 @@ async function downloadDocx() {
 function printDocument() {
     const previewEl = document.getElementById('preview-area');
     if (!previewEl || !previewEl.innerHTML.trim()) {
-        return showToast('Generate a document first before printing.', 'Notice', 'ℹ️');
+        return showToast('Generate a document first before printing.', 'Notice', '');
     }
     const win = window.open('', '_blank', 'width=900,height=700');
-    if (!win) return showToast('Pop-up blocked. Please allow pop-ups for this site.', 'Error', '❌');
+    if (!win) return showToast('Pop-up blocked. Please allow pop-ups for this site.', 'Error', '');
     win.document.write(`<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -1417,11 +1454,11 @@ ${previewEl.innerHTML}
 async function downloadPDF() {
     const previewEl = document.getElementById('preview-area');
     if (!previewEl || !previewEl.innerHTML.trim()) {
-        return showToast('Generate a document first before downloading.', 'Notice', 'ℹ️');
+        return showToast('Generate a document first before downloading.', 'Notice', '');
     }
     // Use the browser's print-to-PDF in a clean popup window
     printDocument();
-    showToast('In the print dialog, choose "Save as PDF" as the destination.', 'PDF Download', '📄');
+    showToast('In the print dialog, choose "Save as PDF" as the destination.', 'PDF Download', '');
 }
 
 function downloadHTML() {
@@ -1468,8 +1505,8 @@ async function pushToParent() {
             body: JSON.stringify({ parentEmail, studentName, title, content })
         });
         const data = await res.json();
-        if (res.ok) showToast("Record pushed successfully to Parent's Dashboard!", "Success", "✅");
-        else showToast(data.error || "Push failed", "Error", "❌");
+        if (res.ok) showToast("Record pushed successfully to Parent's Dashboard!", "Success", "");
+        else showToast(data.error || "Push failed", "Error", "");
     } catch (e) { showFriendlyError(e); }
 }
 
@@ -1560,7 +1597,7 @@ async function generateTeacherGuideNotes() {
             payload.subject = document.getElementById('lp-subject').value;
             payload.strand = document.getElementById('lp-strand').value;
             payload.lessonNumber = 1;
-            if (!payload.subject || !payload.strand) return showToast("Subject and Strands are required.", "Warning", "⚠️");
+            if (!payload.subject || !payload.strand) return showToast("Subject and Strands are required.", "Warning", "");
         }
 
         showProgress(25, "Analysing lesson details...");
@@ -1590,12 +1627,12 @@ async function generateTeacherGuideNotes() {
 window.generateTeacherGuideNotes = generateTeacherGuideNotes;
 
 async function saveSOWToLibrary() {
-    if (!lastGeneratedSow) return showToast("No generated Scheme of Work found to save.", "Warning", "⚠️");
+    if (!lastGeneratedSow) return showToast("No generated Scheme of Work found to save.", "Warning", "");
     
     const defaultTitle = `${lastGeneratedSow.grade} ${lastGeneratedSow.subject} - Term ${lastGeneratedSow.term}`;
     const title = prompt("Enter a custom title for this Scheme of Work to save in library:", defaultTitle);
     if (title === null) return;
-    if (!title.trim()) return showToast("A valid title is required.", "Warning", "⚠️");
+    if (!title.trim()) return showToast("A valid title is required.", "Warning", "");
 
     try {
         const body = {
@@ -1615,7 +1652,7 @@ async function saveSOWToLibrary() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
-        showToast(`Successfully saved "${body.title}" to your SOW Library!`, "Saved", "🎉");
+        showToast(`Successfully saved "${body.title}" to your SOW Library!`, "Saved", "");
         
         const saveBtn = document.getElementById('btn-save-sow-lib');
         if (saveBtn) saveBtn.style.display = 'none';
@@ -1633,11 +1670,11 @@ async function clearSowLibrary() {
     try {
         const res = await fetch('/api/sow/all', { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
         if (res.ok) {
-            showToast('SOW Library cleared!', 'Cleared', '✅');
+            showToast('SOW Library cleared!', 'Cleared', '');
             loadSavedSowDropdown();
         } else {
             const err = await res.json();
-            showToast(err.error || 'Failed to clear library', 'Error', '❌');
+            showToast(err.error || 'Failed to clear library', 'Error', '');
         }
     } catch (e) { showFriendlyError(e); }
 }
@@ -1707,8 +1744,8 @@ function selectWorkspaceSubject(num, showNotification = true) {
 
         const status1 = card1.querySelector('.workspace-status');
         const status2 = card2.querySelector('.workspace-status');
-        if (status1) status1.textContent = num === 1 ? '🟢 Active Workspace' : 'Click to activate';
-        if (status2) status2.textContent = num === 2 ? '🟢 Active Workspace' : 'Click to activate';
+        if (status1) status1.textContent = num === 1 ? ' Active Workspace' : 'Click to activate';
+        if (status2) status2.textContent = num === 2 ? ' Active Workspace' : 'Click to activate';
     }
 
     const activeSubject = num === 1 ? userSubject1 : userSubject2;
@@ -1815,7 +1852,7 @@ async function saveClassProgress() {
         }
     });
     
-    if (studentsData.length === 0) return showToast("Please enter at least one student record.", "Warning", "⚠️");
+    if (studentsData.length === 0) return showToast("Please enter at least one student record.", "Warning", "");
     
     try {
         const res = await fetch('/api/progress', {
@@ -1824,14 +1861,14 @@ async function saveClassProgress() {
             body: JSON.stringify({ term, sharedWith, studentsData })
         });
         if (res.ok) {
-            showToast("Class Progress Record Saved successfully!", "Success", "✅");
+            showToast("Class Progress Record Saved successfully!", "Success", "");
             document.getElementById('prog-parent-email').value = '';
             tbody.innerHTML = '';
             addProgressRow();
             loadProgressRecords();
         } else {
             const err = await res.json();
-            showToast(err.error || "Failed to save progress", "Error", "❌");
+            showToast(err.error || "Failed to save progress", "Error", "");
         }
     } catch(e) { showFriendlyError(e); }
 }

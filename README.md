@@ -25,11 +25,31 @@ A production-ready AI dashboard for Kenyan Facilitators to generate KICD-complia
    MONGODB_URI=your_mongodb_atlas_connection_string
    JWT_SECRET=your_random_secret_string
    ```
+   `MONGODB_URI` is required. The app no longer falls back to `local_db.json`; configure a reachable MongoDB database locally and in the Render environment settings.
 
 4. **Run Locally**:
    ```bash
    npm run dev
    ```
+   The server listens at `http://localhost:3000` by default. It requires a reachable `MONGODB_URI`; set the URI in local `.env` and separately in Render's Environment settings. GitHub stores/deploys the source, it is not the database host.
+
+The automatic CBC News Bot is disabled by default. To enable its twice-daily messages later, set `ENABLE_CBC_NEWS_BOT=true` in the hosting environment.
+
+## Migrating Local Data
+
+`local_db.json` is ignored by Git, so run the migration on the computer that has that file. Set a valid `MONGODB_URI` in `.env`, then preview the import with:
+
+```bash
+npm run migrate:local-db
+```
+
+The preview prints counts only. To write records, run:
+
+```bash
+npm run migrate:local-db -- --apply
+```
+
+The migration inserts missing records and leaves matching MongoDB records unchanged. It is safe to rerun; keep a backup of `local_db.json` until you have verified the imported records in Atlas.
 
 ## Deployment on Render
 

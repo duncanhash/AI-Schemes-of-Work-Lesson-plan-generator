@@ -41,7 +41,10 @@ if (togglePassword) {
     togglePassword.addEventListener('click', () => {
         const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
         passwordInput.setAttribute('type', type);
-        togglePassword.textContent = type === 'password' ? '👁️' : '🙈';
+        const isVisible = type === 'text';
+        togglePassword.textContent = isVisible ? 'Hide' : 'Show';
+        togglePassword.setAttribute('aria-label', isVisible ? 'Hide password' : 'Show password');
+        togglePassword.setAttribute('aria-pressed', String(isVisible));
     });
 }
 
@@ -295,6 +298,6 @@ async function forgotPassword() {
         });
         const data2 = await res2.json();
         if (data2.error) throw new Error(data2.error);
-        alert("✅ Password updated! Log in now."); 
+        alert(" Password updated! Log in now.");
     } catch (err) { showError(err.message); }
 }
