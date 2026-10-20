@@ -1,7 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
@@ -16,7 +16,17 @@ const upload = multer({ dest: 'uploads/' });
 
 const app = express();
 const port = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'cbc_prod_secure_928173645';
+const JWT_SECRET = process.env.JWT_SECRET;
+const AUTH_COOKIE = 'cbc_session';
+const COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: 24 * 60 * 60 * 1000
+};
+
+if (!JWT_SECRET) throw new Error('JWT_SECRET is required. Configure it in .env or the hosting environment.');
 
 // ── Rate Limiting ──
 const loginAttempts = new Map();
@@ -49,8 +59,8 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'home.html'));
 });
 
-app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+app.use(cookieParser());
 app.use(express.static('public'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -87,8 +97,7 @@ const transporter = nodemailer.createTransport({
 
 // ── Auth Middleware ──
 function authenticateToken(req, res, next) {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const token = req.cookies && req.cookies[AUTH_COOKIE];
     if (!token) return res.sendStatus(401);
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.sendStatus(403);
@@ -96,6 +105,27 @@ function authenticateToken(req, res, next) {
         next();
     });
 }
+
+function issueAuthCookie(res, user) {
+    const token = jwt.sign({ email: user.email, role: user.role || 'teacher' }, JWT_SECRET, { expiresIn: '24h' });
+    res.cookie(AUTH_COOKIE, token, COOKIE_OPTIONS);
+}
+
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.user.email });
+        if (!user) return res.sendStatus(401);
+        res.json({ email: user.email, name: user.name, role: user.role || 'teacher' });
+    } catch (err) {
+        res.status(500).json({ error: 'Session lookup failed' });
+    }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    const { maxAge, ...clearOptions } = COOKIE_OPTIONS;
+    res.clearCookie(AUTH_COOKIE, clearOptions);
+    res.json({ message: 'Logged out' });
+});
 
 // ── Auth Endpoints ──
 app.post('/api/auth/register', rateLimit, async (req, res) => {
@@ -107,7 +137,7 @@ app.post('/api/auth/register', rateLimit, async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        console.log(`[AUTH] New Registration Attempt: ${email} (OTP: ${otp})`);
+        console.log(`[AUTH] New Registration Attempt: ${email}`);
 
         const newUser = new User({ 
             name, 
@@ -128,7 +158,7 @@ app.post('/api/auth/register', rateLimit, async (req, res) => {
             text: `Your OTP is: ${otp}`
         }).catch(err => console.error("Email error:", err));
 
-        res.json({ message: 'OTP sent', debugOtp: otp });
+        res.json({ message: 'OTP sent' });
     } catch (err) { res.status(500).json({ error: 'Registration error: ' + err.message }); }
 });
 
@@ -143,8 +173,8 @@ app.post('/api/auth/verify', async (req, res) => {
         user.otp = null;
         await user.save();
 
-        const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
-        res.json({ token, email, name: user.name, role: user.role || 'teacher' });
+        issueAuthCookie(res, user);
+        res.json({ email, name: user.name, role: user.role || 'teacher' });
     } catch (err) { res.status(500).json({ error: 'Verification error' }); }
 });
 
@@ -182,13 +212,12 @@ app.post('/api/auth/login', rateLimit, async (req, res) => {
 
             return res.status(400).json({
                 error: 'Please verify email',
-                needsVerify: true,
-                debugOtp: otp
+                needsVerify: true
             });
         }
 
-        const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '24h' });
-        res.json({ token, email, name: user.name, role: user.role || 'teacher' });
+        issueAuthCookie(res, user);
+        res.json({ email, name: user.name, role: user.role || 'teacher' });
     } catch (err) { res.status(500).json({ error: 'Login error' }); }
 });
 
@@ -211,7 +240,7 @@ app.post('/api/auth/forgot', async (req, res) => {
             text: `Your reset code is: ${otp}`
         }).catch(err => console.error("Email error:", err));
 
-        res.json({ message: 'Reset code sent', debugOtp: otp });
+        res.json({ message: 'Reset code sent' });
     } catch (err) { res.status(500).json({ error: 'Mail error' }); }
 });
 
@@ -598,8 +627,17 @@ app.get('/api/ping', (req, res) => {
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
-const io = new Server(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] }
+const io = new Server(server);
+
+io.engine.use(cookieParser());
+io.use((socket, next) => {
+    const token = socket.request.cookies && socket.request.cookies[AUTH_COOKIE];
+    if (!token) return next(new Error('Unauthorized'));
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return next(new Error('Unauthorized'));
+        socket.data.user = user;
+        next();
+    });
 });
 
 // ── Online Presence Tracking ──
@@ -620,13 +658,14 @@ io.on('connection', socket => {
     console.log(`New client connected: ${socket.id}`);
 
     // Client identifies themselves
-    socket.on('identify', ({ email, name }) => {
-        onlineUsers.set(socket.id, { email: email || 'anonymous', name: name || 'User' });
+    socket.on('identify', ({ name } = {}) => {
+        onlineUsers.set(socket.id, { email: socket.data.user.email, name: name || 'User' });
         broadcastOnlineCount();
     });
 
     // Client joins a named room (channel)
     socket.on('joinChannel', (channel) => {
+        if (channel === 'staff' && socket.data.user.role !== 'teacher') return;
         Object.keys(socket.rooms).forEach(room => {
             if (room !== socket.id) socket.leave(room);
         });
@@ -635,8 +674,10 @@ io.on('connection', socket => {
     });
 
     // Legacy: allow direct sendMessage via socket
-    socket.on('sendMessage', async ({ channel, text, sender, senderName }) => {
+    socket.on('sendMessage', async ({ channel, text, senderName }) => {
+        if (channel === 'staff' && socket.data.user.role !== 'teacher') return;
         try {
+            const sender = socket.data.user.email;
             const newMsg = new ChatMessage({ sender, senderName: senderName || sender, text, channel, time: new Date().toLocaleTimeString() });
             await newMsg.save();
             io.emit(`chat:${channel}`, newMsg);

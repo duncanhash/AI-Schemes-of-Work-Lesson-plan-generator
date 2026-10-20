@@ -1,10 +1,12 @@
 const http = require('http');
 require('dotenv').config();
+const db = require('./db');
 
 const PORT = process.env.PORT || 3000;
 const BASE_URL = `http://localhost:${PORT}`;
+let sessionCookie = '';
 
-async function request(path, method, body = null, token = null) {
+async function request(path, method, body = null) {
     return new Promise((resolve, reject) => {
         const url = `${BASE_URL}${path}`;
         const options = {
@@ -13,11 +15,11 @@ async function request(path, method, body = null, token = null) {
                 'Content-Type': 'application/json'
             }
         };
-        if (token) {
-            options.headers['Authorization'] = `Bearer ${token}`;
-        }
+        if (sessionCookie) options.headers.Cookie = sessionCookie;
         
         const req = http.request(url, options, (res) => {
+            const setCookie = res.headers['set-cookie'];
+            if (setCookie) sessionCookie = setCookie[0].split(';', 1)[0];
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -41,6 +43,7 @@ async function request(path, method, body = null, token = null) {
 
 async function runTests() {
     console.log("=== STARTING WEBSITE API INTEGRATION TESTS ===");
+    await db.connectDB();
     
     const testEmail = `tester_${Date.now()}@pedagogy.com`;
     const testPassword = "Password123!";
@@ -56,12 +59,17 @@ async function runTests() {
         subject2: "Mathematics"
     });
     
-    if (regRes.status !== 200 || !regRes.body.debugOtp) {
+    if (regRes.status !== 200) {
         console.error("❌ Registration failed:", regRes.status, regRes.body);
         process.exit(1);
     }
-    const otp = regRes.body.debugOtp;
-    console.log("✅ Registration successful. OTP:", otp);
+    const pendingUser = await db.User.findOne({ email: testEmail });
+    if (!pendingUser || !pendingUser.otp) {
+        console.error("❌ Registration did not create a verification code.");
+        process.exit(1);
+    }
+    const otp = pendingUser.otp;
+    console.log("✅ Registration successful.");
     
     // 2. Verify OTP
     console.log("2. Verifying OTP...");
@@ -70,12 +78,11 @@ async function runTests() {
         otp
     });
     
-    if (verifyRes.status !== 200 || !verifyRes.body.token) {
+    if (verifyRes.status !== 200 || !sessionCookie) {
         console.error("❌ OTP Verification failed:", verifyRes.status, verifyRes.body);
         process.exit(1);
     }
-    const token = verifyRes.body.token;
-    console.log("✅ OTP Verification successful. Received Token.");
+    console.log("✅ OTP Verification successful. Session cookie received.");
     
     // 3. Login
     console.log("3. Logging in...");
@@ -83,7 +90,7 @@ async function runTests() {
         email: testEmail,
         password: testPassword
     });
-    if (loginRes.status !== 200 || !loginRes.body.token) {
+    if (loginRes.status !== 200 || !sessionCookie) {
         console.error("❌ Login failed:", loginRes.status, loginRes.body);
         process.exit(1);
     }
@@ -91,7 +98,7 @@ async function runTests() {
     
     // 4. Fetch Profile
     console.log("4. Fetching Profile...");
-    const profileRes = await request('/api/profile', 'GET', null, token);
+    const profileRes = await request('/api/profile', 'GET');
     if (profileRes.status !== 200 || profileRes.body.name !== "Test Facilitator") {
         console.error("❌ Profile retrieval failed:", profileRes.status, profileRes.body);
         process.exit(1);
@@ -106,7 +113,7 @@ async function runTests() {
         school: "Antigravity Academy",
         subjects: "Computer Science, Mathematics",
         profilePicture: dummyBase64
-    }, token);
+    });
     
     if (updateProfileRes.status !== 200) {
         console.error("❌ Profile update failed:", updateProfileRes.status, updateProfileRes.body);
@@ -115,7 +122,7 @@ async function runTests() {
     console.log("✅ Profile updated successfully.");
     
     // Re-verify profile picture is stored
-    const profileCheck = await request('/api/profile', 'GET', null, token);
+    const profileCheck = await request('/api/profile', 'GET');
     if (profileCheck.body.profilePicture !== dummyBase64) {
         console.error("❌ Profile picture did not persist correctly:", profileCheck.body.profilePicture);
         process.exit(1);
@@ -125,14 +132,14 @@ async function runTests() {
     // 6. Test Chat API
     console.log("6. Testing Chat API (Post & Get)...");
     const chatMsgText = `Hello teachers! Test message at ${new Date().toLocaleTimeString()}`;
-    const chatPostRes = await request('/api/chat/staff', 'POST', { text: chatMsgText }, token);
+    const chatPostRes = await request('/api/chat/staff', 'POST', { text: chatMsgText });
     if (chatPostRes.status !== 200 || chatPostRes.body.text !== chatMsgText) {
         console.error("❌ Chat post failed:", chatPostRes.status, chatPostRes.body);
         process.exit(1);
     }
     console.log("✅ Chat post successful. SenderName:", chatPostRes.body.senderName);
     
-    const chatGetRes = await request('/api/chat/staff', 'GET', null, token);
+    const chatGetRes = await request('/api/chat/staff', 'GET');
     if (chatGetRes.status !== 200 || !Array.isArray(chatGetRes.body)) {
         console.error("❌ Chat get failed:", chatGetRes.status, chatGetRes.body);
         process.exit(1);
@@ -143,11 +150,21 @@ async function runTests() {
         process.exit(1);
     }
     console.log("✅ Chat retrieval successful.");
+
+    const logoutRes = await request('/api/auth/logout', 'POST');
+    if (logoutRes.status !== 200) {
+        console.error("❌ Logout failed:", logoutRes.status, logoutRes.body);
+        process.exit(1);
+    }
+    const sessionRes = await request('/api/auth/me', 'GET');
+    if (sessionRes.status !== 401) {
+        console.error("❌ Session remained active after logout:", sessionRes.status, sessionRes.body);
+        process.exit(1);
+    }
+    console.log("✅ Logout cleared the session cookie.");
     
     // 7. Clean up database
     console.log("7. Cleaning up test user from database...");
-    const db = require('./db.js');
-    await db.connectDB();
     await db.User.findOneAndDelete({ email: testEmail });
     console.log("✅ Database cleaned successfully.");
     

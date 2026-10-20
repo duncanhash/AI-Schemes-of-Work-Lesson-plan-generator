@@ -5,17 +5,19 @@ const formTitle = document.getElementById('formTitle');
 const authCard = document.getElementById('authCard');
 const otpCard = document.getElementById('otpCard');
 const authError = document.getElementById('authError');
+localStorage.removeItem('cbc_token');
 
 // ── Auto-Redirect if Already Logged In ──
-const existingToken = localStorage.getItem('cbc_token');
 const existingRole = localStorage.getItem('cbc_role');
-if (existingToken && window.location.pathname.includes('login.html')) {
-    console.log("Existing session found. Redirecting...");
-    if (existingRole === 'parent') {
-        window.location.href = '/parent_dashboard.html';
-    } else {
-        window.location.href = '/dashboard.html';
-    }
+if (window.location.pathname.includes('login.html')) {
+    fetch('/api/auth/me')
+        .then(async res => {
+            if (!res.ok) return;
+            const user = await res.json();
+            const role = user.role || existingRole;
+            window.location.href = role === 'parent' ? '/parent_dashboard.html' : '/dashboard.html';
+        })
+        .catch(() => {});
 }
 
 function showError(msg) {
@@ -28,8 +30,8 @@ function showError(msg) {
 let isLoginMode = true;
 let registeredEmail = sessionStorage.getItem('pending_email') || '';
 
-// Auto-show OTP if we were in the middle of it
-if (registeredEmail && !localStorage.getItem('cbc_token')) {
+// Auto-show OTP if registration was interrupted before verification.
+if (registeredEmail) {
     window.addEventListener('DOMContentLoaded', () => showOTP());
 }
 
@@ -187,12 +189,6 @@ loginForm.addEventListener('submit', async (e) => {
                 sessionStorage.setItem('pending_email', email);
                 showOTP();
                 
-                if (data.debugOtp) {
-                    const otpInput = document.getElementById('otpInput');
-                    if (otpInput) otpInput.value = data.debugOtp;
-                    showError("Verifying OTP automatically...");
-                    setTimeout(verifyOTP, 1500);
-                }
                 return;
             }
             throw new Error(data.error || 'Authentication failed');
@@ -200,7 +196,7 @@ loginForm.addEventListener('submit', async (e) => {
 
         if (isLoginMode) {
             console.log("Login successful!");
-            localStorage.setItem('cbc_token', data.token);
+            localStorage.removeItem('cbc_token');
             localStorage.setItem('cbc_email', data.email);
             localStorage.setItem('cbc_name', data.name);
             if (data.role) localStorage.setItem('cbc_role', data.role);
@@ -219,16 +215,6 @@ loginForm.addEventListener('submit', async (e) => {
             sessionStorage.setItem('pending_email', email);
             showOTP();
 
-            // ── AUTOREAD OTP (Debug/Testing Convenience) ──
-            if (data.debugOtp) {
-                console.log("Autoreading OTP...");
-                const otpInput = document.getElementById('otpInput');
-                if (otpInput) {
-                    otpInput.value = data.debugOtp;
-                    // Auto-verify after a short delay for visual feedback
-                    setTimeout(() => verifyOTP(), 800);
-                }
-            }
         }
     } catch (err) {
         showError(err.message);
@@ -261,7 +247,7 @@ async function verifyOTP() {
             throw new Error(data.error || 'Invalid OTP');
         }
 
-        localStorage.setItem('cbc_token', data.token);
+        localStorage.removeItem('cbc_token');
         localStorage.setItem('cbc_email', data.email);
         localStorage.setItem('cbc_name', data.name);
         if (data.role) localStorage.setItem('cbc_role', data.role);
@@ -287,7 +273,7 @@ async function forgotPassword() {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         
-        let otp = data.debugOtp || prompt("Enter the reset code sent to your email:");
+        let otp = prompt("Enter the reset code sent to your email:");
         const newPass = prompt("Enter your new password:");
         if (!otp || !newPass) return;
 

@@ -1,13 +1,8 @@
 // ── State Management ──
 let currentParent = {
-    email: localStorage.getItem('cbc_email'),
+    email: '',
     name: localStorage.getItem('cbc_name') || 'Parent'
 };
-
-// ── Authentication Check ──
-if (!localStorage.getItem('cbc_token')) {
-    window.location.href = '/login.html';
-}
 
 // ── Navigation ──
 function showSection(sectionId) {
@@ -23,8 +18,12 @@ function showSection(sectionId) {
 }
 
 function logout() {
-    localStorage.clear();
-    window.location.href = '/login.html';
+    fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
+        localStorage.removeItem('cbc_email');
+        localStorage.removeItem('cbc_name');
+        localStorage.removeItem('cbc_role');
+        window.location.href = '/login.html';
+    });
 }
 
 // ── Load Shared Records ──
@@ -32,7 +31,7 @@ async function loadRecords() {
     const container = document.getElementById('records-container');
     try {
         const res = await fetch('/api/parent/records', {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('cbc_token')}` }
+            headers: {  }
         });
         const records = await res.json();
 
@@ -104,7 +103,7 @@ function closeModal() {
 // ── Load Parent Progress ──
 async function loadParentProgress() {
     try {
-        const res = await fetch('/api/parent/progress', { headers: { 'Authorization': `Bearer ${localStorage.getItem('cbc_token')}` } });
+        const res = await fetch('/api/parent/progress', { headers: {  } });
         if (!res.ok) return;
         const records = await res.json();
         
@@ -187,7 +186,7 @@ async function loadMessages() {
         chatBox.innerHTML = `<div class="chat-info" style="text-align:center;padding:20px;opacity:0.5;">Loading messages...</div>`;
 
         const res = await fetch('/api/chat/parent-community', {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('cbc_token')}` }
+            headers: {  }
         });
         const messages = await res.json();
 
@@ -218,7 +217,6 @@ async function sendMessage() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('cbc_token')}`
             },
             body: JSON.stringify({ text })
         });
@@ -235,7 +233,23 @@ function stopChatPolling() {
 }
 
 // Enter key support
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const sessionResponse = await fetch('/api/auth/me');
+    if (!sessionResponse.ok) {
+        window.location.href = '/login.html';
+        return;
+    }
+    const session = await sessionResponse.json();
+    if (session.role !== 'parent') {
+        window.location.href = '/dashboard.html';
+        return;
+    }
+
+    currentParent.email = session.email;
+    currentParent.name = session.name || 'Parent';
+    localStorage.removeItem('cbc_token');
+    localStorage.setItem('cbc_email', currentParent.email);
+    localStorage.setItem('cbc_name', currentParent.name);
     document.getElementById('parent-name').textContent = currentParent.name;
     document.getElementById('parent-email').textContent = currentParent.email;
     loadRecords();

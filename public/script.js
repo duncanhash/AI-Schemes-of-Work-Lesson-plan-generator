@@ -38,30 +38,33 @@ function showFriendlyError(err) {
     }
 }
 
-const token = localStorage.getItem('cbc_token');
-const userEmail = localStorage.getItem('cbc_email');
+let userEmail = localStorage.getItem('cbc_email') || '';
 
 // ── Auth Guard ──
 const publicPages = ['login.html', 'home.html', '/'];
 const isPublicPage = publicPages.some(page => window.location.pathname.endsWith(page) || window.location.pathname === page);
 
-if (!token && !isPublicPage) {
-    console.warn("Unauthorized access. Redirecting to login...");
-    window.location.href = '/login.html';
-}
-
-function logout() {
-    localStorage.removeItem('cbc_token');
-    localStorage.removeItem('cbc_email');
-    localStorage.removeItem('cbc_name');
-    window.location.href = '/login.html';
-}
-
 // ── GLOBAL DASHBOARD INITIALIZATION ──
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
     console.log("Pedagogy Engine: Dashboard DOM Ready.");
 
     try {
+        const sessionResponse = await fetch('/api/auth/me');
+        if (!sessionResponse.ok) {
+            window.location.href = '/login.html';
+            return;
+        }
+        const session = await sessionResponse.json();
+        if (session.role === 'parent') {
+            window.location.href = '/parent_dashboard.html';
+            return;
+        }
+        localStorage.removeItem('cbc_token');
+        userEmail = session.email;
+        localStorage.setItem('cbc_email', session.email);
+        localStorage.setItem('cbc_name', session.name || '');
+        localStorage.setItem('cbc_role', session.role || 'teacher');
+
         updateSidebarToggleState();
         setupNavigation();
         populateProfileFields();
@@ -71,9 +74,7 @@ window.addEventListener('DOMContentLoaded', () => {
         loadSavedSowDropdown();
         loadProgressRecords();
         initWalkthrough();
-        if (token) {
-            initChatSocket();
-        }
+        initChatSocket();
         console.log("Pedagogy Engine: All systems green.");
     } catch (e) {
         console.error("Initialization Error:", e);
@@ -85,7 +86,7 @@ let userProfileCache = null;
 
 async function populateProfileFields() {
     try {
-        const res = await fetch('/api/profile', { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch('/api/profile', { headers: {  } });
         if (res.status === 401 || res.status === 403) return logout();
         const profile = await res.json();
         userProfileCache = profile;
@@ -208,8 +209,12 @@ function setupNavigation() {
 
 function logout() {
     console.log("Logging out...");
-    localStorage.clear();
-    window.location.href = '/';
+    fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
+        localStorage.removeItem('cbc_email');
+        localStorage.removeItem('cbc_name');
+        localStorage.removeItem('cbc_role');
+        window.location.href = '/login.html';
+    });
 }
 
 window.toggleSidebar = function() {
@@ -341,7 +346,7 @@ async function fetchStrandsDropdown() {
     try {
         const res = await fetch('/api/suggest', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ field: 'strands', grade, subject, term })
         });
         const data = await res.json();
@@ -451,7 +456,7 @@ async function suggestField(inputId, fieldType, context) {
         const term = (context === 'assess' || context === 'project') ? '1' : document.getElementById(`termSelect-${context}`).value;
         const res = await fetch('/api/suggest', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ field: fieldType, grade, subject, strand, term, activeWorkspace: activeSubjectNum })
         });
         const data = await res.json();
@@ -523,7 +528,7 @@ async function generateDocument(isTemplate = false) {
 
         const res = await fetch('/api/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         if (res.status === 401 || res.status === 403) return logout();
@@ -600,7 +605,7 @@ async function generateSowFromCurriculum() {
 
         const res = await fetch('/api/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
 
@@ -659,7 +664,7 @@ async function generateProject() {
         setTimeout(() => showProgress(60, 'Building phases and rubric...'), 1200);
         const res = await fetch('/api/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         if (res.status === 401 || res.status === 403) return logout();
@@ -717,7 +722,7 @@ async function handleAssessmentGeneration() {
         showProgress(50, "Crafting assessment tool...");
         const res = await fetch('/api/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 documentType: type,
                 grade: gradeSubject,
@@ -749,7 +754,7 @@ let chatSocket = null;
 function identifySocket() {
     if (!chatSocket || !chatSocket.connected) return;
     const displayName = (userProfileCache && userProfileCache.name) || localStorage.getItem('cbc_name') || userEmail.split('@')[0];
-    chatSocket.emit('identify', { email: userEmail, name: displayName });
+    chatSocket.emit('identify', { name: displayName });
 }
 
 function initChatSocket() {
@@ -881,7 +886,7 @@ async function loadChat() {
         if (!container) return;
         container.innerHTML = `<div class="chat-info" style="text-align:center;padding:20px;opacity:0.5;">Loading messages...</div>`;
 
-        const res = await fetch(`/api/chat/${currentChatChannel}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch(`/api/chat/${currentChatChannel}`, { headers: {  } });
         if (res.status === 401 || res.status === 403) return logout();
         const messages = await res.json();
 
@@ -917,7 +922,7 @@ async function sendChatMessage() {
         // Send via REST (server will broadcast to all sockets)
         await fetch(`/api/chat/${currentChatChannel}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
         });
     } catch (e) { console.error("Send error:", e); }
@@ -1009,7 +1014,7 @@ async function addPortfolioEntry() {
 
         const res = await fetch('/api/portfolio', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ studentName, projectTitle, description, photos })
         });
 
@@ -1035,7 +1040,7 @@ async function loadPortfolio() {
         const grid = document.getElementById('portfolio-grid');
         if (!grid) return;
 
-        const res = await fetch('/api/portfolio', { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch('/api/portfolio', { headers: {  } });
         const items = await res.json();
 
         // Keep local cache for edits
@@ -1074,7 +1079,7 @@ async function loadPortfolio() {
 async function deletePortfolioEntry(id) {
     if (!confirm("Delete this entry?")) return;
     try {
-        await fetch(`/api/portfolio/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        await fetch(`/api/portfolio/${id}`, { method: 'DELETE', headers: {  } });
         loadPortfolio();
         showToast("Entry deleted successfully.", "Deleted", "");
     } catch (e) { showFriendlyError(e); }
@@ -1145,7 +1150,7 @@ window.savePortfolioEdits = async function() {
 
         const res = await fetch(`/api/portfolio/${id}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ studentName, projectTitle, description, photos: finalPhotos })
         });
 
@@ -1181,7 +1186,7 @@ async function shareWithParent(recordId, studentName, projectTitle, description)
 
         const res = await fetch('/api/share-portfolio', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ parentEmail, studentName, projectTitle, portfolioHtml, recordId })
         });
         const data = await res.json();
@@ -1199,7 +1204,7 @@ async function renderPlanner() {
         const body = document.getElementById('planner-body');
         if (!body) return;
 
-        const res = await fetch('/api/planner', { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch('/api/planner', { headers: {  } });
         plannerData = await res.json();
 
         body.innerHTML = '';
@@ -1234,7 +1239,7 @@ async function savePlanner() {
     try {
         const res = await fetch('/api/planner', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ data: plannerData })
         });
         if (res.ok) {
@@ -1314,7 +1319,7 @@ async function saveProfile() {
 
         const res = await fetch('/api/profile', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
 
@@ -1343,7 +1348,7 @@ async function uploadCurriculum() {
 
     const res = await fetch('/api/profile/curriculum', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {  },
         body: formData
     });
 
@@ -1403,7 +1408,7 @@ async function downloadDocx() {
         const html = document.getElementById('preview-area').innerHTML;
         const res = await fetch('/api/docx', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ html })
         });
         if (!res.ok) {
@@ -1471,7 +1476,7 @@ function downloadHTML() {
 
 async function updateStorageUsage() {
     try {
-        const res = await fetch('/api/storage/usage', { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch('/api/storage/usage', { headers: {  } });
         const data = await res.json();
 
         const bar = document.getElementById('storage-bar-inner');
@@ -1501,7 +1506,7 @@ async function pushToParent() {
     try {
         const res = await fetch('/api/parent/push-record', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ parentEmail, studentName, title, content })
         });
         const data = await res.json();
@@ -1516,7 +1521,7 @@ let savedSowsCache = [];
 
 async function loadSavedSowDropdown() {
     try {
-        const res = await fetch('/api/sow', { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch('/api/sow', { headers: {  } });
         if (!res.ok) return;
         const sows = await res.json();
         savedSowsCache = sows;
@@ -1605,7 +1610,7 @@ async function generateTeacherGuideNotes() {
 
         const res = await fetch('/api/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
 
@@ -1646,7 +1651,7 @@ async function saveSOWToLibrary() {
 
         const res = await fetch('/api/sow', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
         });
         const data = await res.json();
@@ -1668,7 +1673,7 @@ async function saveSOWToLibrary() {
 async function clearSowLibrary() {
     if (!confirm('Clear ALL saved SOWs from your library? This cannot be undone.')) return;
     try {
-        const res = await fetch('/api/sow/all', { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch('/api/sow/all', { method: 'DELETE', headers: {  } });
         if (res.ok) {
             showToast('SOW Library cleared!', 'Cleared', '');
             loadSavedSowDropdown();
@@ -1857,7 +1862,7 @@ async function saveClassProgress() {
     try {
         const res = await fetch('/api/progress', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ term, sharedWith, studentsData })
         });
         if (res.ok) {
@@ -1876,7 +1881,7 @@ window.saveClassProgress = saveClassProgress;
 
 async function loadProgressRecords() {
     try {
-        const res = await fetch('/api/progress', { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch('/api/progress', { headers: {  } });
         if (!res.ok) return;
         const records = await res.json();
         
