@@ -47,6 +47,7 @@ const isPublicPage = publicPages.some(page => window.location.pathname.endsWith(
 // ── GLOBAL DASHBOARD INITIALIZATION ──
 window.addEventListener('DOMContentLoaded', async () => {
     console.log("Pedagogy Engine: Dashboard DOM Ready.");
+    setupSidebarHover();
 
     try {
         const sessionResponse = await fetch('/api/auth/me');
@@ -232,6 +233,33 @@ window.toggleSidebar = function() {
     updateSidebarToggleState();
 };
 
+function setupSidebarHover() {
+    const layout = document.querySelector('.dashboard-layout');
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (!layout || !sidebar || !overlay) return;
+
+    if (window.matchMedia('(max-width: 900px)').matches) {
+        layout.classList.remove('sidebar-collapsed');
+    } else {
+        layout.classList.add('sidebar-collapsed');
+    }
+
+    sidebar.addEventListener('mouseenter', () => {
+        if (window.matchMedia('(max-width: 900px)').matches) return;
+        layout.classList.remove('sidebar-collapsed');
+        overlay.classList.add('active');
+        updateSidebarToggleState();
+    });
+
+    sidebar.addEventListener('mouseleave', () => {
+        if (window.matchMedia('(max-width: 900px)').matches) return;
+        layout.classList.add('sidebar-collapsed');
+        overlay.classList.remove('active');
+        updateSidebarToggleState();
+    });
+}
+
 function updateSidebarToggleState() {
     const layout = document.querySelector('.dashboard-layout');
     const sidebar = document.querySelector('.sidebar');
@@ -239,9 +267,17 @@ function updateSidebarToggleState() {
     if (!layout || !sidebar || !toggle) return;
 
     const isMobile = window.matchMedia('(max-width: 900px)').matches;
+    const overlay = document.getElementById('sidebar-overlay');
+    if (isMobile) {
+        layout.classList.remove('sidebar-collapsed');
+        if (overlay) overlay.classList.toggle('active', sidebar.classList.contains('open'));
+    } else if (!sidebar.matches(':hover')) {
+        layout.classList.add('sidebar-collapsed');
+        if (overlay) overlay.classList.remove('active');
+    }
     if (!isMobile && sidebar.classList.contains('open')) {
         sidebar.classList.remove('open');
-        document.getElementById('sidebar-overlay')?.classList.remove('active');
+        if (overlay) overlay.classList.remove('active');
     }
     const expanded = isMobile ? sidebar.classList.contains('open') : !layout.classList.contains('sidebar-collapsed');
     const label = isMobile ? (expanded ? 'Close navigation' : 'Open navigation') : (expanded ? 'Hide menu' : 'Show menu');
