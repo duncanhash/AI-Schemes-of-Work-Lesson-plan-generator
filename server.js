@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const { OAuth2Client } = require('google-auth-library');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const htmlToDocx = require('html-to-docx');
 const multer = require('multer');
@@ -17,6 +18,8 @@ const upload = multer({ dest: 'uploads/' });
 const app = express();
 const port = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const googleOAuthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 const AUTH_COOKIE = 'cbc_session';
 const COOKIE_OPTIONS = {
     httpOnly: true,
@@ -111,14 +114,36 @@ function issueAuthCookie(res, user) {
     res.cookie(AUTH_COOKIE, token, COOKIE_OPTIONS);
 }
 
+function getUniqueUsernameBase(email) {
+    const localPart = email.split('@')[0].toLowerCase();
+    return localPart.replace(/[^a-z0-9._-]/g, '').slice(0, 24) || 'mwalimu';
+}
+
+async function createUniqueUsername(email) {
+    const base = getUniqueUsernameBase(email);
+    let username = base;
+    let suffix = 2;
+
+    while (await User.exists({ username })) {
+        const suffixText = `_${suffix++}`;
+        username = `${base.slice(0, 24 - suffixText.length)}${suffixText}`;
+    }
+
+    return username;
+}
+
 app.get('/api/auth/me', authenticateToken, async (req, res) => {
     try {
         const user = await User.findOne({ email: req.user.email });
         if (!user) return res.sendStatus(401);
-        res.json({ email: user.email, name: user.name, role: user.role || 'teacher' });
+        res.json({ email: user.email, name: user.name, username: user.username || '', role: user.role || 'teacher' });
     } catch (err) {
         res.status(500).json({ error: 'Session lookup failed' });
     }
+});
+
+app.get('/api/auth/config', (req, res) => {
+    res.json({ googleClientId: GOOGLE_CLIENT_ID || '' });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -129,18 +154,41 @@ app.post('/api/auth/logout', (req, res) => {
 
 // ── Auth Endpoints ──
 app.post('/api/auth/register', rateLimit, async (req, res) => {
-    let { name, email, password, role, subject1, subject2 } = req.body;
-    email = email.toLowerCase();
+    let { name, username, email, password, role, subject1, subject2 } = req.body;
+    if (typeof email !== 'string' || typeof username !== 'string' || typeof password !== 'string') {
+        return res.status(400).json({ error: 'Username, email, and password are required.' });
+    }
+
+    email = email.trim().toLowerCase();
+    username = username.trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,24}$/.test(username)) {
+        return res.status(400).json({ error: 'Username must be 3-24 characters and use letters, numbers, dots, underscores, or hyphens.' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Enter a valid email address.' });
+    }
+    if (password.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+    if (role && !['teacher', 'parent'].includes(role)) {
+        return res.status(400).json({ error: 'Select a valid account type.' });
+    }
+
     try {
-        const existingUser = await User.findOne({ email });
-        if (existingUser) return res.status(400).json({ error: 'User exists' });
+        const [existingEmail, existingUsername] = await Promise.all([
+            User.exists({ email }),
+            User.exists({ username })
+        ]);
+        if (existingEmail) return res.status(409).json({ error: 'An account already uses this email.' });
+        if (existingUsername) return res.status(409).json({ error: 'That username is already taken.' });
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         console.log(`[AUTH] New Registration Attempt: ${email}`);
 
         const newUser = new User({ 
-            name, 
+            name: (typeof name === 'string' && name.trim()) ? name.trim() : username,
+            username,
             email, 
             password: hashedPassword, 
             otp, 
@@ -159,11 +207,17 @@ app.post('/api/auth/register', rateLimit, async (req, res) => {
         }).catch(err => console.error("Email error:", err));
 
         res.json({ message: 'OTP sent' });
-    } catch (err) { res.status(500).json({ error: 'Registration error: ' + err.message }); }
+    } catch (err) {
+        if (err.code === 11000) return res.status(409).json({ error: 'That email or username is already in use.' });
+        res.status(500).json({ error: 'Registration error' });
+    }
 });
 
 app.post('/api/auth/verify', async (req, res) => {
     let { email, otp } = req.body;
+    if (typeof email !== 'string' || typeof otp !== 'string') {
+        return res.status(400).json({ error: 'Email and verification code are required.' });
+    }
     email = email.toLowerCase();
     try {
         const user = await User.findOne({ email, otp });
@@ -174,17 +228,22 @@ app.post('/api/auth/verify', async (req, res) => {
         await user.save();
 
         issueAuthCookie(res, user);
-        res.json({ email, name: user.name, role: user.role || 'teacher' });
+        res.json({ email, name: user.name, username: user.username || '', role: user.role || 'teacher' });
     } catch (err) { res.status(500).json({ error: 'Verification error' }); }
 });
 
 app.post('/api/auth/login', rateLimit, async (req, res) => {
-    let { email, password, role } = req.body;
-    email = email.toLowerCase();
+    const { identifier, email: legacyEmail, password, role } = req.body;
+    const loginIdentifier = typeof identifier === 'string' ? identifier.trim().toLowerCase()
+        : (typeof legacyEmail === 'string' ? legacyEmail.trim().toLowerCase() : '');
+    if (!loginIdentifier || typeof password !== 'string') {
+        return res.status(400).json({ error: 'Enter your email or username and password.' });
+    }
     try {
-        const user = await User.findOne({ email });
-        if (!user || !(await bcrypt.compare(password, user.password))) {
-            console.warn(`[AUTH] Failed login attempt for: ${email}`);
+        const lookup = loginIdentifier.includes('@') ? { email: loginIdentifier } : { username: loginIdentifier };
+        const user = await User.findOne(lookup);
+        if (!user || !user.password || !(await bcrypt.compare(password, user.password))) {
+            console.warn(`[AUTH] Failed login attempt for: ${loginIdentifier}`);
             return res.status(400).json({ error: 'Invalid credentials' });
         }
 
@@ -205,20 +264,86 @@ app.post('/api/auth/login', rateLimit, async (req, res) => {
 
             transporter.sendMail({
                 from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
-                to: email,
+                to: user.email,
                 subject: 'Verify your Pedagogy Account',
                 text: `Your new OTP is: ${otp}`
             }).catch(err => console.error("Email error:", err));
 
             return res.status(400).json({
                 error: 'Please verify email',
-                needsVerify: true
+                needsVerify: true,
+                email: user.email
             });
         }
 
         issueAuthCookie(res, user);
-        res.json({ email, name: user.name, role: user.role || 'teacher' });
+        res.json({ email: user.email, name: user.name, username: user.username || '', role: user.role || 'teacher' });
     } catch (err) { res.status(500).json({ error: 'Login error' }); }
+});
+
+app.post('/api/auth/google', rateLimit, async (req, res) => {
+    if (!googleOAuthClient) {
+        return res.status(503).json({ error: 'Google sign-in is not configured.' });
+    }
+
+    const { credential, role } = req.body;
+    if (typeof credential !== 'string' || !credential) {
+        return res.status(400).json({ error: 'Google sign-in credential is required.' });
+    }
+    if (role && !['teacher', 'parent'].includes(role)) {
+        return res.status(400).json({ error: 'Select a valid account type.' });
+    }
+
+    try {
+        const ticket = await googleOAuthClient.verifyIdToken({
+            idToken: credential,
+            audience: GOOGLE_CLIENT_ID
+        });
+        const googleProfile = ticket.getPayload();
+        if (!googleProfile || !googleProfile.email || googleProfile.email_verified !== true) {
+            return res.status(401).json({ error: 'Google did not provide a verified email address.' });
+        }
+
+        const email = googleProfile.email.toLowerCase();
+        let user = await User.findOne({ email });
+        if (user) {
+            const userRole = user.role || 'teacher';
+            if (role && userRole !== role) {
+                const otherRole = userRole === 'teacher' ? 'Facilitator' : 'Parent';
+                return res.status(400).json({
+                    error: `This account is registered as a ${otherRole}. Please switch to the ${otherRole} Portal to log in.`
+                });
+            }
+            user.googleId = googleProfile.sub;
+            user.isVerified = true;
+            user.otp = null;
+            if (!user.username) user.username = await createUniqueUsername(email);
+            if (!user.name) user.name = user.username;
+            await user.save();
+        } else {
+            const username = await createUniqueUsername(email);
+            user = new User({
+                name: (typeof googleProfile.name === 'string' && googleProfile.name.trim()) ? googleProfile.name.trim() : username,
+                username,
+                email,
+                googleId: googleProfile.sub,
+                role: role || 'teacher',
+                isVerified: true
+            });
+            await user.save();
+        }
+
+        issueAuthCookie(res, user);
+        res.json({
+            email: user.email,
+            name: user.name,
+            username: user.username || '',
+            role: user.role || 'teacher'
+        });
+    } catch (err) {
+        console.error('[AUTH] Google sign-in failed:', err.message);
+        res.status(401).json({ error: 'Google sign-in could not be verified. Please try again.' });
+    }
 });
 
 // ── Forgot Password ──
@@ -378,6 +503,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
         const user = await User.findOne({ email: req.user.email });
         res.json({ 
             name: user.profileTeacher || user.name, 
+            username: user.username || '',
             school: user.profileSchool || '', 
             subjects: user.subjects || '',
             subject1: user.subject1 || '',
@@ -1422,5 +1548,3 @@ ${sigBlock}`;
         res.status(500).json({ error: error.message });
     }
 });
-
-

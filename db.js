@@ -1,7 +1,11 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-    name: String, email: { type: String, unique: true }, password: { type: String, required: true },
+    name: String,
+    username: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+    email: { type: String, unique: true },
+    password: String,
+    googleId: { type: String, unique: true, sparse: true },
     role: { type: String, default: 'teacher' }, otp: String, isVerified: { type: Boolean, default: false },
     curriculumText: String, curriculumText1: String, curriculumText2: String,
     curriculumSubject1: String, curriculumGrade1: String, curriculumSubject2: String, curriculumGrade2: String,

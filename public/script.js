@@ -64,6 +64,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         userEmail = session.email;
         localStorage.setItem('cbc_email', session.email);
         localStorage.setItem('cbc_name', session.name || '');
+        localStorage.setItem('cbc_username', session.username || '');
         localStorage.setItem('cbc_role', session.role || 'teacher');
 
         updateSidebarToggleState();
@@ -103,8 +104,9 @@ async function populateProfileFields() {
         // Update the welcome header
         const header = document.getElementById('welcomeHeader');
         if (header) {
-            const firstName = profile.name ? profile.name.split(' ')[0] : 'Facilitator';
-            header.textContent = `Welcome back, ${firstName}`;
+            const displayName = profile.username || localStorage.getItem('cbc_username') ||
+                (profile.name ? profile.name.split(' ')[0] : 'Facilitator');
+            header.textContent = `Welcome, Mwalimu ${displayName}`;
         }
 
         // Populate subjects
@@ -213,6 +215,7 @@ function logout() {
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
         localStorage.removeItem('cbc_email');
         localStorage.removeItem('cbc_name');
+        localStorage.removeItem('cbc_username');
         localStorage.removeItem('cbc_role');
         window.location.href = '/login.html';
     });

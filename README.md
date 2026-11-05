@@ -24,8 +24,10 @@ A production-ready AI dashboard for Kenyan Facilitators to generate KICD-complia
    EMAIL_PASS=your_gmail_app_password
    MONGODB_URI=your_mongodb_atlas_connection_string
    JWT_SECRET=your_random_secret_string
+   GOOGLE_CLIENT_ID=your_google_oauth_web_client_id
    ```
    `MONGODB_URI` is required. The app no longer falls back to `local_db.json`; configure a reachable MongoDB database locally and in the Render environment settings.
+   Local accounts register with a username, email, and password, then verify the email with the emailed code. They can sign in using either username or email plus password. Google sign-in is optional; configure `GOOGLE_CLIENT_ID` as a Google OAuth web client ID and allow the app's origin in its authorized JavaScript origins to enable it.
 
 4. **Run Locally**:
    ```bash

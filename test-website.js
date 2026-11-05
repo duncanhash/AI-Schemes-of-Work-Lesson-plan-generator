@@ -46,12 +46,14 @@ async function runTests() {
     await db.connectDB();
     
     const testEmail = `tester_${Date.now()}@pedagogy.com`;
+    const testUsername = `tester_${Date.now()}`;
     const testPassword = "Password123!";
     
     // 1. Register User
     console.log("1. Registering user:", testEmail);
     const regRes = await request('/api/auth/register', 'POST', {
         name: "Test Facilitator",
+        username: testUsername,
         email: testEmail,
         password: testPassword,
         role: "teacher",
@@ -87,7 +89,7 @@ async function runTests() {
     // 3. Login
     console.log("3. Logging in...");
     const loginRes = await request('/api/auth/login', 'POST', {
-        email: testEmail,
+        identifier: testUsername,
         password: testPassword
     });
     if (loginRes.status !== 200 || !sessionCookie) {
@@ -95,11 +97,21 @@ async function runTests() {
         process.exit(1);
     }
     console.log("✅ Login successful.");
+
+    const emailLoginRes = await request('/api/auth/login', 'POST', {
+        identifier: testEmail,
+        password: testPassword
+    });
+    if (emailLoginRes.status !== 200) {
+        console.error("❌ Email login failed:", emailLoginRes.status, emailLoginRes.body);
+        process.exit(1);
+    }
+    console.log("✅ Email login successful.");
     
     // 4. Fetch Profile
     console.log("4. Fetching Profile...");
     const profileRes = await request('/api/profile', 'GET');
-    if (profileRes.status !== 200 || profileRes.body.name !== "Test Facilitator") {
+    if (profileRes.status !== 200 || profileRes.body.name !== "Test Facilitator" || profileRes.body.username !== testUsername) {
         console.error("❌ Profile retrieval failed:", profileRes.status, profileRes.body);
         process.exit(1);
     }

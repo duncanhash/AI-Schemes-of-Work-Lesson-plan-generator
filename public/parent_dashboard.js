@@ -21,6 +21,7 @@ function logout() {
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => {
         localStorage.removeItem('cbc_email');
         localStorage.removeItem('cbc_name');
+        localStorage.removeItem('cbc_username');
         localStorage.removeItem('cbc_role');
         window.location.href = '/login.html';
     });
