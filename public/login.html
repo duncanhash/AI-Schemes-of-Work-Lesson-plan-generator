@@ -131,17 +131,11 @@
 
     <div class="auth-card" id="authCard">
         <div class="logo-wrap">
-            <img src="/logo.svg" alt="Pedagogy Logo">
+            <img src="/images/logo.svg" alt="Pedagogy Logo">
             <div class="logo-text">PEDAGOGY</div>
         </div>
 
-        <!-- Beautiful Pill Switcher for distinct login portals -->
-        <div class="role-selector-pill" id="roleSelectorPill" style="display: flex; background: rgba(255,255,255,0.03); padding: 4px; border-radius: 12px; margin: 15px 0 25px 0; border: 1px solid rgba(255,255,255,0.05); gap: 4px;">
-            <button type="button" id="roleBtnTeacher" onclick="selectLoginRole('teacher')" style="flex: 1; padding: 10px; border-radius: 8px; border: none; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.3s; background: var(--accent); color: white;"> Facilitator</button>
-            <button type="button" id="roleBtnParent" onclick="selectLoginRole('parent')" style="flex: 1; padding: 10px; border-radius: 8px; border: none; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.3s; background: transparent; color: #8080a0;"> Parent</button>
-        </div>
-
-        <h1 id="formTitle">Facilitator Portal</h1>
+        <h1 id="formTitle">Teacher Portal</h1>
         <p>The Heart of Modern CBC.</p>
 
         <!-- Inline Error Message -->
@@ -159,19 +153,6 @@
             <div class="input-group" id="nameGroup" style="display: none;">
                 <label for="name">Full Name (optional)</label>
                 <input type="text" name="name" id="name" placeholder="Mwalimu Juma" autocomplete="name">
-                <label style="margin-top:14px;">I am a...</label>
-                <div style="display:flex; gap:10px;">
-                    <label id="lblTeacher"
-                        style="flex:1; background:rgba(124,107,255,0.2); padding:10px; border-radius:8px; text-align:center; cursor:pointer; border:1px solid var(--accent); color:white; font-size:14px; font-weight:600;">
-                        <input type="radio" name="role" value="teacher" checked style="display:none;"
-                            onchange="updateRoleStyle(this)">  Teacher
-                    </label>
-                    <label id="lblParent"
-                        style="flex:1; background:rgba(255,255,255,0.05); padding:10px; border-radius:8px; text-align:center; cursor:pointer; border:1px solid rgba(255,255,255,0.1); color:#8080a0; font-size:14px; font-weight:600;">
-                        <input type="radio" name="role" value="parent" style="display:none;"
-                            onchange="updateRoleStyle(this)">  Parent
-                    </label>
-                </div>
             </div>
             <div id="subjectsGroup" style="display: none; margin-top: 20px;">
                 <div style="display: flex; gap: 12px; text-align: left;">
@@ -228,7 +209,7 @@
 
     <div class="auth-card" id="otpCard">
         <div class="logo-wrap">
-            <img src="/logo.svg" alt="Pedagogy Logo">
+            <img src="/images/logo.svg" alt="Pedagogy Logo">
             <div class="logo-text">PEDAGOGY</div>
         </div>
         <h1>Verify Email</h1>
@@ -241,39 +222,6 @@
         <button class="btn-auth" onclick="verifyOTP()">Verify &amp; Launch</button>
     </div>
 
-    <script>
-        function updateRoleStyle(radio) {
-            const teacher = document.getElementById('lblTeacher');
-            const parent = document.getElementById('lblParent');
-            const nameInput = document.getElementById('name');
-            const emailInput = document.getElementById('email');
-            const subjectsGroup = document.getElementById('subjectsGroup');
-            const nameGroup = document.getElementById('nameGroup');
-            const isSignUp = nameGroup && nameGroup.style.display === 'block';
-            
-            [teacher, parent].forEach(el => {
-                el.style.background = 'rgba(255,255,255,0.05)'; 
-                el.style.borderColor = 'rgba(255,255,255,0.1)'; 
-                el.style.color = '#8080a0';
-            });
-            
-            if (radio.value === 'teacher') {
-                teacher.style.background = 'rgba(124,107,255,0.2)'; teacher.style.borderColor = 'var(--accent)'; teacher.style.color = 'white';
-                if (nameInput) nameInput.placeholder = "Mwalimu Juma";
-                if (emailInput) emailInput.placeholder = isSignUp ? "mwalimu@school.com" : "mwalimu@school.com or username";
-                if (subjectsGroup) {
-                    subjectsGroup.style.display = isSignUp ? 'block' : 'none';
-                }
-            } else if (radio.value === 'parent') {
-                parent.style.background = 'rgba(0,212,170,0.2)'; parent.style.borderColor = '#00d4aa'; parent.style.color = 'white';
-                if (nameInput) nameInput.placeholder = "Mama/Baba Juma";
-                if (emailInput) emailInput.placeholder = isSignUp ? "parent@email.com" : "parent@email.com or username";
-                if (subjectsGroup) {
-                    subjectsGroup.style.display = 'none';
-                }
-            }
-        }
-    </script>
     <script src="login.js"></script>
 </body>
 

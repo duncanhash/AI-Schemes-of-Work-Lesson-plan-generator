@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "migrate:local-db": "node migrate-local-db.js"
+    "migrate:local-db": "node migrate-local-db.js",
+    "test": "node --test tests/sow-validation.test.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

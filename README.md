@@ -1,6 +1,14 @@
-# Pedagogy | The Heart of Kenyan CBC
+# Pedagogy | Teacher SOW & Lesson Plan Generator
 
-A production-ready AI dashboard for Kenyan Facilitators to generate KICD-compliant Schemes of Work, Lesson Plans, and Assessment Tools.
+A teacher-focused AI dashboard for Kenyan teachers to generate KICD-aligned Schemes of Work, Lesson Plans, and Assessment Tools.
+
+## Teacher-only access
+
+The app now provides teacher accounts only. Parent registration, login, dashboards, progress sharing, and parent-facing chat have been removed. Existing parent accounts and their saved records are not automatically deleted or converted; they are no longer able to sign in. An administrator can deliberately promote an existing account to a teacher with `node manage-users.js set-role <email>`.
+
+## Scheme of Work lesson count
+
+Choose the number of weeks (1-20) in the SOW screen. Both the curriculum-upload and AI-generation paths request exactly five lessons per week, and the server rejects an AI result that does not contain those lessons in week/lesson order. Blank SOW templates also contain five numbered lesson rows per week. The default is 12 weeks.
 
 ## Setup Instructions
 
@@ -62,10 +70,25 @@ The migration inserts missing records and leaves matching MongoDB records unchan
 5. **Start Command**: `node server.js`
 
 ### Important Note on Images
-Ensure you have the following images in the `public/` directory for the landing page:
-- `hero_cbc.png` (Hero section)
-- `students_research.png` (Features background)
-- `teachers_hub.png` (Community section)
+Static site artwork is grouped in `public/images/` and served locally:
+- `hero_students_project.svg` (Hero section)
+- `students_research.svg` (Features background)
+- `teachers_hub.svg` (Community section)
+- `logo.svg` (Site logo)
+
+User-uploaded files remain in `uploads/`, separate from the site's artwork.
+
+### Chat retention and limits
+Chat messages older than 36 hours (and undated legacy records) are excluded from chat history and deleted at startup and approximately once per minute while the server is running. Local database migrations only import chat records with a timestamp that is still within that 36-hour window; undated legacy messages are skipped.
+
+AI document generation is currently limited to 10 requests per user per hour by `generateRateLimit` in `server.js`. This counter is held in server memory, so it resets on restart and is not shared across multiple server instances.
+
+### Testing
+Run the focused offline tests with `npm test`. The files in `tests/fixtures/` are saved HTML examples for reference, not production data. For an API integration check, start the app with `npm run dev`, then run `node test-website.js` in another terminal. It uses the configured MongoDB and creates a test account and chat message, so use a disposable development database. For syntax-only checks, run `node --check server.js` and `node --check public/script.js`.
+
+## Data, deployment, and backups
+
+GitHub stores the source code. A push to the connected branch lets Render fetch and run that code; the running server connects to MongoDB using Render's environment variables. User records and saved teaching content live in MongoDB, not in GitHub. `local_db.json` is an old local migration source, not a live database or an automatic outage backup. MongoDB Atlas backups must be configured separately. Uploaded file bytes are currently stored under `uploads/`, which may be temporary on Render; use persistent/object storage if uploads must survive deployments or restarts.
 
 ## Tech Stack
 - **Backend**: Node.js, Express, Mongoose (MongoDB)

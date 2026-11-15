@@ -21,7 +21,7 @@ const userSchema = new mongoose.Schema({
 
 const portfolioSchema = new mongoose.Schema({
     userEmail: String, studentName: String, projectTitle: String, description: String,
-    photos: [String], sharedWith: String, timestamp: { type: Number, default: Date.now }
+    photos: [String], timestamp: { type: Number, default: Date.now }
 });
 const chatSchema = new mongoose.Schema({
     sender: String, senderName: String, text: String, time: String, channel: { type: String, default: 'staff' },
@@ -33,7 +33,7 @@ const sowSchema = new mongoose.Schema({
     html: String, timestamp: { type: Number, default: Date.now }
 });
 const progressSchema = new mongoose.Schema({
-    teacherEmail: String, term: String, sharedWith: String,
+    teacherEmail: String, term: String,
     studentsData: Array,
     studentName: String, mathScore: String, englishScore: String, scienceScore: String, rubric: String, remarks: String,
     timestamp: { type: Number, default: Date.now }

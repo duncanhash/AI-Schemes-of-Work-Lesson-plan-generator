@@ -16,6 +16,7 @@ const {
 
 const sourcePath = path.join(__dirname, 'local_db.json');
 const applyChanges = process.argv.includes('--apply');
+const CHAT_RETENTION_MS = 36 * 60 * 60 * 1000;
 
 const collections = [
     { source: 'users', model: User, uniqueBy: 'email' },
@@ -58,14 +59,23 @@ async function main() {
 
     const source = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
     const migrationPlan = collections.map(collection => {
-        const records = source[collection.source] || [];
-        if (!Array.isArray(records)) throw new Error(`The ${collection.source} entry must be an array.`);
-        return { ...collection, records };
+        const sourceRecords = source[collection.source] || [];
+        if (!Array.isArray(sourceRecords)) throw new Error(`The ${collection.source} entry must be an array.`);
+        const records = collection.source === 'messages'
+            ? sourceRecords.filter(record =>
+                Number.isFinite(record && record.timestamp) &&
+                record.timestamp >= Date.now() - CHAT_RETENTION_MS
+            )
+            : sourceRecords;
+        return { ...collection, records, skipped: sourceRecords.length - records.length };
     });
 
     console.log(`${applyChanges ? 'Applying' : 'Dry run'}: local_db.json to MongoDB`);
     migrationPlan.forEach(collection => {
         console.log(`${collection.source}: ${collection.records.length} record(s) -> ${collection.model.collection.collectionName}`);
+        if (collection.source === 'messages' && collection.skipped > 0) {
+            console.log(`messages skipped (missing timestamp or older than 36 hours): ${collection.skipped}`);
+        }
     });
 
     if (!applyChanges) {

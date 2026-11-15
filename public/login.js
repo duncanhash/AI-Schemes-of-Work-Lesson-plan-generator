@@ -13,7 +13,7 @@ function saveSession(data) {
     localStorage.setItem('cbc_name', data.name || data.username || '');
     localStorage.setItem('cbc_username', data.username || '');
     if (data.role) localStorage.setItem('cbc_role', data.role);
-    window.location.href = data.role === 'parent' ? '/parent_dashboard.html' : '/dashboard.html';
+    window.location.href = '/dashboard.html';
 }
 
 // ── Auto-Redirect if Already Logged In ──
@@ -24,7 +24,7 @@ if (window.location.pathname.includes('login.html')) {
             if (!res.ok) return;
             const user = await res.json();
             const role = user.role || existingRole;
-            window.location.href = role === 'parent' ? '/parent_dashboard.html' : '/dashboard.html';
+            if (role === 'teacher') window.location.href = '/dashboard.html';
         })
         .catch(() => {});
 }
@@ -59,78 +59,11 @@ if (togglePassword) {
     });
 }
 
-function selectLoginRole(role) {
-    const btnTeacher = document.getElementById('roleBtnTeacher');
-    const btnParent = document.getElementById('roleBtnParent');
-    const formTitle = document.getElementById('formTitle');
-    const emailInput = document.getElementById('email');
-    const nameInput = document.getElementById('name');
-    
-    // Set active radio in the background form
-    const radio = document.querySelector(`input[name="role"][value="${role}"]`);
-    if (radio) {
-        radio.checked = true;
-        // Trigger style update for registration radio buttons if visible
-        if (typeof updateRoleStyle === 'function') {
-            updateRoleStyle(radio);
-        }
-    }
-    
-    if (role === 'teacher') {
-        document.documentElement.style.setProperty('--accent', '#7c6bff');
-        document.documentElement.style.setProperty('--accent-glow', 'rgba(124, 107, 255, 0.3)');
-        
-        if (btnTeacher) {
-            btnTeacher.style.background = 'var(--accent)';
-            btnTeacher.style.color = 'white';
-        }
-        if (btnParent) {
-            btnParent.style.background = 'transparent';
-            btnParent.style.color = '#8080a0';
-        }
-        
-        if (formTitle) {
-            formTitle.textContent = isLoginMode ? 'Facilitator Portal' : 'Join Pedagogy';
-        }
-        if (emailInput) {
-            emailInput.placeholder = isLoginMode ? "mwalimu@school.com or username" : "mwalimu@school.com";
-        }
-        if (nameInput) {
-            nameInput.placeholder = "Mwalimu Juma";
-        }
-    } else {
-        document.documentElement.style.setProperty('--accent', '#00d4aa');
-        document.documentElement.style.setProperty('--accent-glow', 'rgba(0, 212, 170, 0.3)');
-        
-        if (btnParent) {
-            btnParent.style.background = 'var(--accent)';
-            btnParent.style.color = 'white';
-        }
-        if (btnTeacher) {
-            btnTeacher.style.background = 'transparent';
-            btnTeacher.style.color = '#8080a0';
-        }
-        
-        if (formTitle) {
-            formTitle.textContent = isLoginMode ? 'Parent Portal' : 'Join Pedagogy';
-        }
-        if (emailInput) {
-            emailInput.placeholder = isLoginMode ? "parent@email.com or username" : "parent@email.com";
-        }
-        if (nameInput) {
-            nameInput.placeholder = "Mama/Baba Juma";
-        }
-    }
-}
-window.selectLoginRole = selectLoginRole;
-
 function switchMode() {
     isLoginMode = !isLoginMode;
     if (authError) authError.style.display = 'none'; // Clear errors when switching
-    
-    const activeRole = document.querySelector('input[name="role"]:checked')?.value || 'teacher';
-    
     submitBtn.textContent = isLoginMode ? 'Log In' : 'Sign Up';
+    formTitle.textContent = isLoginMode ? 'Teacher Portal' : 'Join Pedagogy';
     switchBtn.textContent = isLoginMode ? "Don't have an account? Sign Up" : "Already have an account? Log In";
     document.getElementById('nameGroup').style.display = isLoginMode ? 'none' : 'block';
     const usernameGroup = document.getElementById('usernameGroup');
@@ -151,21 +84,11 @@ function switchMode() {
     }
     
     const subjectsGroup = document.getElementById('subjectsGroup');
-    if (subjectsGroup) {
-        subjectsGroup.style.display = (!isLoginMode && activeRole === 'teacher') ? 'block' : 'none';
-    }
-    
-    // Hide portal selector switch during sign up (since role is chosen explicitly via radio buttons)
-    const portalSelector = document.getElementById('roleSelectorPill');
-    if (portalSelector) {
-        portalSelector.style.display = isLoginMode ? 'flex' : 'none';
-    }
+    if (subjectsGroup) subjectsGroup.style.display = isLoginMode ? 'none' : 'block';
     
     // Update autocomplete for password field when signing up
     if (passInput) passInput.autocomplete = isLoginMode ? "current-password" : "new-password";
 
-    // Refresh titles & placeholders using the active role
-    selectLoginRole(activeRole);
 }
 
 loginForm.addEventListener('submit', async (e) => {
@@ -179,11 +102,9 @@ loginForm.addEventListener('submit', async (e) => {
     const password = formData.get('password');
     const name = formData.get('name');
     const username = formData.get('username');
-    const role = formData.get('role');
-
     let subject1 = '';
     let subject2 = '';
-    if (!isLoginMode && role === 'teacher') {
+    if (!isLoginMode) {
         subject1 = document.getElementById('subject1').value.trim();
         subject2 = document.getElementById('subject2').value.trim();
         if (!subject1 || !subject2) {
@@ -196,8 +117,8 @@ loginForm.addEventListener('submit', async (e) => {
     try {
         const endpoint = isLoginMode ? '/api/auth/login' : '/api/auth/register';
         const body = isLoginMode
-            ? { identifier, password, role }
-            : { email: identifier, username, password, name, role, subject1, subject2 };
+            ? { identifier, password, role: 'teacher' }
+            : { email: identifier, username, password, name, role: 'teacher', subject1, subject2 };
 
         console.log(`Attempting ${isLoginMode ? 'Login' : 'Registration'} for:`, identifier);
 
@@ -278,12 +199,11 @@ async function initializeGoogleSignIn() {
         google.accounts.id.initialize({
             client_id: googleClientId,
             callback: async ({ credential }) => {
-                const selectedRole = document.querySelector('input[name="role"]:checked')?.value || 'teacher';
                 try {
                     const response = await fetch('/api/auth/google', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ credential, role: selectedRole })
+                        body: JSON.stringify({ credential, role: 'teacher' })
                     });
                     const data = await response.json();
                     if (!response.ok) throw new Error(data.error || 'Google sign-in failed.');

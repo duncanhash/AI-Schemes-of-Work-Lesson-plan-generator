@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">Learners exploring ideas</title>
+  <desc id="desc">Students discuss their research and share notes in a bright classroom.</desc>
+  <defs>
+    <linearGradient id="bg" x2="0" y2="1">
+      <stop stop-color="#364a68"/>
+      <stop offset="1" stop-color="#192b3a"/>
+    </linearGradient>
+    <linearGradient id="light" x2="0" y2="1">
+      <stop stop-color="#b5eadc"/>
+      <stop offset="1" stop-color="#608c9b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="700" fill="url(#bg)"/>
+  <circle cx="936" cy="190" r="180" fill="#00d4aa" opacity=".14"/>
+  <circle cx="238" cy="493" r="220" fill="#7c6bff" opacity=".2"/>
+  <rect x="740" y="76" width="348" height="275" rx="20" fill="#111a24" stroke="#b3c9cc" stroke-width="10"/>
+  <rect x="758" y="94" width="312" height="239" rx="10" fill="url(#light)"/>
+  <path d="M758 215h312M914 94v239" stroke="#ebf8e9" stroke-width="9"/>
+  <path d="M0 466 1200 408v292H0z" fill="#203044"/>
+  <path d="M178 437h814l84 92H103z" fill="#835b62"/>
+  <path d="M218 518h25v182h-25zm763 0h25v182h-25z" fill="#4a3e52"/>
+  <!-- Learner one -->
+  <path d="M276 449c12-77 43-111 91-111s80 34 92 111v92H276z" fill="#8c79f0"/>
+  <ellipse cx="367" cy="303" rx="48" ry="58" fill="#8d583d"/>
+  <path d="M319 302c-4-48 18-78 50-78 35 0 54 29 47 72-12-10-27-15-45-14-13 13-30 19-52 20z" fill="#2a2029"/>
+  <path d="M331 316c2 29 17 48 38 59l-7 32 19 14 22-14-9-33c16-15 23-35 20-59-16 2-31-6-43-19-10 12-23 18-40 20z" fill="#8d583d"/>
+  <path d="M350 308h8m26 0h8" stroke="#33232a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M360 335c8 7 17 7 25 0" fill="none" stroke="#60382e" stroke-width="4" stroke-linecap="round"/>
+  <!-- Learner two -->
+  <path d="M476 451c12-78 42-113 91-113 47 0 79 35 90 113v90H476z" fill="#f0a94f"/>
+  <ellipse cx="566" cy="304" rx="48" ry="58" fill="#69432f"/>
+  <path d="M518 303c-4-48 18-78 50-78 35 0 54 29 47 72-12-10-27-15-45-14-13 13-30 19-52 20z" fill="#30202a"/>
+  <path d="M530 316c2 29 17 48 38 59l-7 32 19 14 22-14-9-33c16-15 23-35 20-59-16 2-31-6-43-19-10 12-23 18-40 20z" fill="#69432f"/>
+  <path d="M549 308h8m26 0h8" stroke="#33232a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M559 335c8 7 17 7 25 0" fill="none" stroke="#482e28" stroke-width="4" stroke-linecap="round"/>
+  <!-- Learner three -->
+  <path d="M702 456c11-70 40-105 86-105s76 34 87 105v85H702z" fill="#00b99a"/>
+  <ellipse cx="788" cy="313" rx="46" ry="55" fill="#a96c4b"/>
+  <path d="M742 312c-4-46 17-75 48-75 33 0 51 27 45 70-12-9-27-14-43-13-13 12-29 17-50 18z" fill="#30202a"/>
+  <path d="M753 325c2 27 16 45 36 56l-7 31 19 13 20-13-8-32c15-14 22-33 19-56-15 1-29-6-41-18-10 11-22 17-38 19z" fill="#a96c4b"/>
+  <path d="M771 318h8m24 0h8" stroke="#33232a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M781 343c7 7 16 7 23 0" fill="none" stroke="#67372f" stroke-width="4" stroke-linecap="round"/>
+  <!-- Shared books and research notes -->
+  <path d="m390 437 74-23 54 24-75 27z" fill="#fff0c6"/>
+  <path d="m443 465 75-27v14l-75 27z" fill="#dfad54"/>
+  <path d="m390 437 53 28v14l-53-28z" fill="#c78355"/>
+  <rect x="578" y="432" width="75" height="48" rx="4" fill="#e9f4f1" transform="rotate(-7 578 432)"/>
+  <path d="m593 445 43-5m-40 16 37-4m-34 15 27-3" stroke="#7186a6" stroke-width="4" stroke-linecap="round"/>
+</svg>

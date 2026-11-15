@@ -695,14 +695,6 @@ input:focus, select:focus, textarea:focus {
     background: linear-gradient(135deg, var(--accent), #5643e6);
     box-shadow: 0 4px 15px rgba(124, 107, 255, 0.2);
 }
-.btn-primary.push-parent {
-    background: linear-gradient(135deg, var(--accent2), #00a388);
-    box-shadow: 0 4px 15px rgba(0, 212, 170, 0.2);
-    color: #050508;
-}
-.dark .btn-primary.push-parent {
-    color: white;
-}
 .btn-primary.download-word {
     background: linear-gradient(135deg, #1e3c72, #2a5298);
     box-shadow: 0 4px 15px rgba(42, 82, 152, 0.25);

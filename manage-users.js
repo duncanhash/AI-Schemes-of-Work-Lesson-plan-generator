@@ -2,7 +2,7 @@
  * Pedagogy Database User Manager Utility
  * Usage: 
  *   node manage-users.js list
- *   node manage-users.js set-role <email> <role> (role: teacher / parent)
+ *   node manage-users.js set-role <email> (set an account to teacher)
  */
 
 require('dotenv').config();
@@ -41,17 +41,9 @@ async function run() {
         } 
         else if (command === 'set-role') {
             const email = args[1] ? args[1].toLowerCase() : null;
-            const role = args[2] ? args[2].toLowerCase() : null;
-
-            if (!email || !role) {
+            if (!email) {
                 console.log("❌ Error: Missing parameters.");
-                console.log("Usage: node manage-users.js set-role <email> <role>");
-                console.log("Example: node manage-users.js set-role njoroge@test.com parent");
-                process.exit(1);
-            }
-
-            if (role !== 'teacher' && role !== 'parent') {
-                console.log("❌ Error: Invalid role. Role must be either 'teacher' or 'parent'.");
+                console.log("Usage: node manage-users.js set-role <email>");
                 process.exit(1);
             }
 
@@ -61,25 +53,19 @@ async function run() {
                 process.exit(1);
             }
 
-            user.role = role;
+            user.role = 'teacher';
             await user.save();
-            console.log(`\n🎉 Success! Updated ${email}'s role to: '${role.toUpperCase()}'`);
+            console.log(`\n🎉 Success! Updated ${email}'s role to: 'TEACHER'`);
         } 
         else if (command === 'add') {
             const name = args[1];
             const email = args[2] ? args[2].toLowerCase() : null;
             const password = args[3];
-            const role = args[4] ? args[4].toLowerCase() : 'teacher';
 
             if (!name || !email || !password) {
                 console.log("❌ Error: Missing parameters.");
-                console.log("Usage: node manage-users.js add <name> <email> <password> [role]");
-                console.log("Example: node manage-users.js add \"Jane Doe\" jane@gmail.com pass123 teacher");
-                process.exit(1);
-            }
-
-            if (role !== 'teacher' && role !== 'parent') {
-                console.log("❌ Error: Invalid role. Role must be 'teacher' or 'parent'.");
+                console.log("Usage: node manage-users.js add <name> <email> <password>");
+                console.log("Example: node manage-users.js add \"Jane Doe\" jane@gmail.com pass123");
                 process.exit(1);
             }
 
@@ -95,12 +81,12 @@ async function run() {
                 name,
                 email,
                 password: hashedPassword,
-                role: role,
+                role: 'teacher',
                 isVerified: true
             });
 
             await newUser.save();
-            console.log(`\n🎉 Success! Added verified user '${name}' (${email}) as a '${role.toUpperCase()}'!`);
+            console.log(`\n🎉 Success! Added verified teacher '${name}' (${email})!`);
         }
         else if (command === 'delete') {
             const email = args[1] ? args[1].toLowerCase() : null;
@@ -122,13 +108,13 @@ async function run() {
         else {
             console.log("Available Commands:");
             console.log("  node manage-users.js list                      List all registered users and roles");
-            console.log("  node manage-users.js set-role <email> <role>   Set role ('teacher' or 'parent') for an email");
-            console.log("  node manage-users.js add <name> <email> <pwd> [role]  Add a new pre-verified user to the system");
+            console.log("  node manage-users.js set-role <email>           Set an account to teacher");
+            console.log("  node manage-users.js add <name> <email> <pwd>  Add a new pre-verified teacher");
             console.log("  node manage-users.js delete <email>            Delete a user account entirely");
             console.log("\nExamples:");
-            console.log("  node manage-users.js set-role teacher@gmail.com teacher");
-            console.log("  node manage-users.js add \"Njoroge\" nj@gmail.com pass123 teacher");
-            console.log("  node manage-users.js delete parent@gmail.com");
+            console.log("  node manage-users.js set-role teacher@gmail.com");
+            console.log("  node manage-users.js add \"Njoroge\" nj@gmail.com pass123");
+            console.log("  node manage-users.js delete teacher@gmail.com");
         }
     } catch (e) {
         console.error("❌ Operations Error:", e.message);

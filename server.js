@@ -10,6 +10,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const htmlToDocx = require('html-to-docx');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
+const { validateSowHtml } = require('./sow-validation');
 require('dotenv').config();
 const { User, ChatMessage, Portfolio, WeeklyPlan, SavedSOW, LearnerProgress, connectDB } = require('./db');
 
@@ -17,6 +18,8 @@ const upload = multer({ dest: 'uploads/' });
 
 const app = express();
 const port = process.env.PORT || 3000;
+const CHAT_RETENTION_MS = 36 * 60 * 60 * 1000;
+const CHAT_CLEANUP_INTERVAL_MS = 60 * 1000;
 const JWT_SECRET = process.env.JWT_SECRET;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const googleOAuthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
@@ -64,7 +67,7 @@ app.get('/', (req, res) => {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -104,13 +107,14 @@ function authenticateToken(req, res, next) {
     if (!token) return res.sendStatus(401);
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.sendStatus(403);
+        if (user.role !== 'teacher') return res.sendStatus(403);
         req.user = user;
         next();
     });
 }
 
 function issueAuthCookie(res, user) {
-    const token = jwt.sign({ email: user.email, role: user.role || 'teacher' }, JWT_SECRET, { expiresIn: '24h' });
+    const token = jwt.sign({ email: user.email, role: 'teacher' }, JWT_SECRET, { expiresIn: '24h' });
     res.cookie(AUTH_COOKIE, token, COOKIE_OPTIONS);
 }
 
@@ -170,8 +174,8 @@ app.post('/api/auth/register', rateLimit, async (req, res) => {
     if (password.length < 8) {
         return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     }
-    if (role && !['teacher', 'parent'].includes(role)) {
-        return res.status(400).json({ error: 'Select a valid account type.' });
+    if (role && role !== 'teacher') {
+        return res.status(400).json({ error: 'Only teacher accounts are supported.' });
     }
 
     try {
@@ -222,6 +226,9 @@ app.post('/api/auth/verify', async (req, res) => {
     try {
         const user = await User.findOne({ email, otp });
         if (!user) return res.status(400).json({ error: 'Invalid OTP' });
+        if ((user.role || 'teacher') !== 'teacher') {
+            return res.status(403).json({ error: 'This account type is no longer supported.' });
+        }
 
         user.isVerified = true;
         user.otp = null;
@@ -233,7 +240,7 @@ app.post('/api/auth/verify', async (req, res) => {
 });
 
 app.post('/api/auth/login', rateLimit, async (req, res) => {
-    const { identifier, email: legacyEmail, password, role } = req.body;
+    const { identifier, email: legacyEmail, password } = req.body;
     const loginIdentifier = typeof identifier === 'string' ? identifier.trim().toLowerCase()
         : (typeof legacyEmail === 'string' ? legacyEmail.trim().toLowerCase() : '');
     if (!loginIdentifier || typeof password !== 'string') {
@@ -246,15 +253,8 @@ app.post('/api/auth/login', rateLimit, async (req, res) => {
             console.warn(`[AUTH] Failed login attempt for: ${loginIdentifier}`);
             return res.status(400).json({ error: 'Invalid credentials' });
         }
-
-        // Distinct portal boundary validation
-        const userRole = user.role || 'teacher';
-        if (role && userRole !== role) {
-            const prettyRole = role === 'teacher' ? 'Facilitator' : 'Parent';
-            const otherRole = userRole === 'teacher' ? 'Facilitator' : 'Parent';
-            return res.status(400).json({
-                error: `This account is registered as a ${otherRole}. Please switch to the ${otherRole} Portal to log in.`
-            });
+        if ((user.role || 'teacher') !== 'teacher') {
+            return res.status(403).json({ error: 'This account type is no longer supported.' });
         }
 
         if (!user.isVerified) {
@@ -290,8 +290,8 @@ app.post('/api/auth/google', rateLimit, async (req, res) => {
     if (typeof credential !== 'string' || !credential) {
         return res.status(400).json({ error: 'Google sign-in credential is required.' });
     }
-    if (role && !['teacher', 'parent'].includes(role)) {
-        return res.status(400).json({ error: 'Select a valid account type.' });
+    if (role && role !== 'teacher') {
+        return res.status(400).json({ error: 'Only teacher accounts are supported.' });
     }
 
     try {
@@ -308,12 +308,7 @@ app.post('/api/auth/google', rateLimit, async (req, res) => {
         let user = await User.findOne({ email });
         if (user) {
             const userRole = user.role || 'teacher';
-            if (role && userRole !== role) {
-                const otherRole = userRole === 'teacher' ? 'Facilitator' : 'Parent';
-                return res.status(400).json({
-                    error: `This account is registered as a ${otherRole}. Please switch to the ${otherRole} Portal to log in.`
-                });
-            }
+            if (userRole !== 'teacher') return res.status(403).json({ error: 'This account type is no longer supported.' });
             user.googleId = googleProfile.sub;
             user.isVerified = true;
             user.otp = null;
@@ -327,7 +322,7 @@ app.post('/api/auth/google', rateLimit, async (req, res) => {
                 username,
                 email,
                 googleId: googleProfile.sub,
-                role: role || 'teacher',
+                role: 'teacher',
                 isVerified: true
             });
             await user.save();
@@ -351,7 +346,7 @@ app.post('/api/auth/forgot', async (req, res) => {
     const { email } = req.body;
     try {
         const user = await User.findOne({ email });
-        if (!user) return res.status(400).json({ error: 'User not found' });
+        if (!user || (user.role && user.role !== 'teacher')) return res.status(400).json({ error: 'User not found' });
 
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
         user.resetOtp = otp;
@@ -373,7 +368,7 @@ app.post('/api/auth/reset', async (req, res) => {
     const { email, otp, newPassword } = req.body;
     try {
         const user = await User.findOne({ email, resetOtp: otp, resetExpiry: { $gt: Date.now() } });
-        if (!user) return res.status(400).json({ error: 'Invalid or expired code' });
+        if (!user || (user.role && user.role !== 'teacher')) return res.status(400).json({ error: 'Invalid or expired code' });
 
         user.password = await bcrypt.hash(newPassword, 10);
         user.resetOtp = null;
@@ -673,8 +668,19 @@ app.get('/api/storage/usage', authenticateToken, async (req, res) => {
 });
 
 // ── Teacher Community Chat (Multi-Channel) ──
+async function deleteExpiredChatMessages() {
+    const cutoff = Date.now() - CHAT_RETENTION_MS;
+    return ChatMessage.deleteMany({
+        $or: [
+            { timestamp: { $lt: cutoff } },
+            { timestamp: { $exists: false } }
+        ]
+    });
+}
+
 app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
     const channel = req.params.channel || 'staff';
+    if (channel !== 'staff') return res.sendStatus(404);
     try {
         // Secure staff channel: only teachers/facilitators can access
         if (channel === 'staff') {
@@ -683,7 +689,10 @@ app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
                 return res.status(403).json({ error: 'Access denied: Staff room is for facilitators only' });
             }
         }
-        const messages = await ChatMessage.find({ channel }).sort({ timestamp: -1 }).limit(50);
+        const messages = await ChatMessage.find({
+            channel,
+            timestamp: { $gte: Date.now() - CHAT_RETENTION_MS }
+        }).sort({ timestamp: -1 }).limit(50);
         res.json(messages.reverse());
     } catch (err) { res.status(500).json({ error: 'Chat load error' }); }
 });
@@ -694,6 +703,7 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
     if (!text) return res.status(400).json({ error: 'Message required' });
     try {
         const chan = channel || 'staff';
+        if (chan !== 'staff') return res.status(404).json({ error: 'Chat channel not found' });
         const user = await User.findOne({ email: req.user.email });
         if (chan === 'staff' && (!user || (user.role || 'teacher') !== 'teacher')) {
             return res.status(403).json({ error: 'Access denied: Staff room is for facilitators only' });
@@ -709,39 +719,6 @@ app.post('/api/chat', authenticateToken, async (req, res) => {
         await newMessage.save();
         res.json(newMessage);
     } catch (err) { res.status(500).json({ error: 'Chat send error' }); }
-});
-
-// ── Parent Integration: Share Portfolio ──
-app.post('/api/share-portfolio', authenticateToken, async (req, res) => {
-    const { parentEmail, studentName, projectTitle, portfolioHtml, recordId } = req.body;
-    if (!parentEmail) return res.status(400).json({ error: 'Parent email required' });
-
-    try {
-        // If we have a recordId, update the portfolio in DB to include the parentEmail
-        if (recordId) {
-            await Portfolio.findOneAndUpdate({ _id: recordId }, { sharedWith: parentEmail.toLowerCase() });
-        }
-
-        transporter.sendMail({
-            from: `"Pedagogy Portfolio" <${process.env.EMAIL_USER}>`,
-            to: parentEmail,
-            subject: `CBC Progress Update: ${studentName}`,
-            html: `
-                <div style="font-family:sans-serif; max-width:600px; margin:auto; border:1px solid #eee; padding:30px; border-radius:12px;">
-                    <h2 style="color:#7c6bff;">Pedagogy Learner Update</h2>
-                    <p>Hello, here is a project update for <strong>${studentName}</strong> regarding the project: <strong>"${projectTitle}"</strong>.</p>
-                    <p>You can also view this and other records in your <a href="${process.env.APP_URL || 'http://localhost:3000'}/login.html">Parent Portal</a>.</p>
-                    <hr style="border:none; border-top:1px solid #eee; margin:20px 0;"/>
-                    <div style="background:#f9f9ff; padding:20px; border-radius:8px;">
-                        ${portfolioHtml}
-                    </div>
-                    <h2 style="font-family:sans-serif; color:#7c6bff; margin-top:30px;">PEDAGOGY</h2>
-                    <p style="color:#8080a0; font-size:14px;">The Heart of Modern CBC</p>
-                </div>
-            `
-        }).catch(err => console.error("Email error:", err));
-        res.json({ message: 'Portfolio shared with parent successfully!' });
-    } catch (err) { res.status(500).json({ error: 'Failed to share: ' + err.message }); }
 });
 
 // ── Uptime Ping Endpoint ──
@@ -761,6 +738,7 @@ io.use((socket, next) => {
     if (!token) return next(new Error('Unauthorized'));
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return next(new Error('Unauthorized'));
+        if (user.role && user.role !== 'teacher') return next(new Error('Unauthorized'));
         socket.data.user = user;
         next();
     });
@@ -791,7 +769,7 @@ io.on('connection', socket => {
 
     // Client joins a named room (channel)
     socket.on('joinChannel', (channel) => {
-        if (channel === 'staff' && socket.data.user.role !== 'teacher') return;
+        if (channel !== 'staff' || (socket.data.user.role && socket.data.user.role !== 'teacher')) return;
         Object.keys(socket.rooms).forEach(room => {
             if (room !== socket.id) socket.leave(room);
         });
@@ -801,12 +779,12 @@ io.on('connection', socket => {
 
     // Legacy: allow direct sendMessage via socket
     socket.on('sendMessage', async ({ channel, text, senderName }) => {
-        if (channel === 'staff' && socket.data.user.role !== 'teacher') return;
+        if (channel !== 'staff' || (socket.data.user.role && socket.data.user.role !== 'teacher')) return;
         try {
             const sender = socket.data.user.email;
             const newMsg = new ChatMessage({ sender, senderName: senderName || sender, text, channel, time: new Date().toLocaleTimeString() });
             await newMsg.save();
-            io.emit(`chat:${channel}`, newMsg);
+            io.to(channel).emit(`chat:${channel}`, newMsg);
         } catch (err) {
             console.error('Chat save error', err);
         }
@@ -885,7 +863,7 @@ Make it diverse, heartfelt, and ${period === 'morning' ? 'energizing to start th
             time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         });
         await newMsg.save();
-        io.emit('chat:staff', newMsg);
+        io.to('staff').emit('chat:staff', newMsg);
         console.log(`CBC News Bot posted ${period} message`);
     } catch (err) {
         console.error('Bot error:', err.message);
@@ -896,34 +874,25 @@ Make it diverse, heartfelt, and ${period === 'morning' ? 'energizing to start th
 }
 
 // ── Chat API (Primary REST endpoints) ──
-app.get('/api/chat/:channel', authenticateToken, async (req, res) => {
-    const { channel } = req.params;
-    try {
-        const msgs = await ChatMessage.find({ channel })
-            .sort({ timestamp: -1 })
-            .limit(50)
-            .lean();
-        res.json(msgs.reverse());
-    } catch (err) {
-        res.status(500).json({ error: 'Failed to load chat' });
-    }
-});
-
 // Post a new message (primary path - REST posts, socket broadcasts)
 app.post('/api/chat/:channel', authenticateToken, async (req, res) => {
     const { channel } = req.params;
     const { text } = req.body;
     const senderEmail = req.user.email;
+    if (channel !== 'staff') return res.sendStatus(404);
     if (!text || !text.trim()) return res.status(400).json({ error: 'Message cannot be empty' });
     try {
         // Look up sender's display name
         const user = await User.findOne({ email: senderEmail });
+        if (channel === 'staff' && (!user || (user.role || 'teacher') !== 'teacher')) {
+            return res.status(403).json({ error: 'Access denied: Staff room is for facilitators only' });
+        }
         const displayName = (user && user.profileTeacher) || senderEmail.split('@')[0];
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const newMsg = new ChatMessage({ sender: senderEmail, senderName: displayName, text: text.trim(), channel, time });
         await newMsg.save();
         // Broadcast to ALL connected sockets
-        io.emit(`chat:${channel}`, newMsg);
+        io.to(channel).emit(`chat:${channel}`, newMsg);
         res.json(newMsg);
     } catch (err) {
         console.error('Chat POST error:', err);
@@ -940,22 +909,15 @@ app.get('/api/progress', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/progress', authenticateToken, async (req, res) => {
-    const { term, sharedWith, studentsData, studentName, mathScore, englishScore, scienceScore, rubric, remarks } = req.body;
+    const { term, studentsData, studentName, mathScore, englishScore, scienceScore, rubric, remarks } = req.body;
     try {
         const newRecord = new LearnerProgress({
-            teacherEmail: req.user.email, term, sharedWith, studentsData,
+            teacherEmail: req.user.email, term, studentsData,
             studentName, mathScore, englishScore, scienceScore, rubric, remarks // legacy fallback
         });
         await newRecord.save();
         res.json({ message: 'Progress saved', record: newRecord });
     } catch (err) { res.status(500).json({ error: 'Failed to save progress' }); }
-});
-
-app.get('/api/parent/progress', authenticateToken, async (req, res) => {
-    try {
-        const records = await LearnerProgress.find({ sharedWith: req.user.email });
-        res.json(records);
-    } catch (err) { res.status(500).json({ error: 'Failed to fetch shared progress records' }); }
 });
 
 app.post('/api/sow', authenticateToken, async (req, res) => {
@@ -1000,44 +962,6 @@ app.delete('/api/sow/:id', authenticateToken, async (req, res) => {
         res.json({ success: true, message: 'Scheme of Work deleted successfully' });
     } catch (err) { res.status(500).json({ error: 'Failed to delete Scheme of Work' }); }
 });
-
-// ── Parent Dashboard Endpoints ──
-app.get('/api/parent/records', authenticateToken, async (req, res) => {
-    try {
-        if (req.user.role !== 'parent') return res.status(403).json({ error: 'Access denied' });
-        // Fetch both portfolios and generic records shared with this parent
-        const portfolios = await Portfolio.find({ sharedWith: req.user.email.toLowerCase() });
-        res.json(portfolios);
-    } catch (err) { res.status(500).json({ error: 'Failed to load records' }); }
-});
-
-// Generic endpoint to push any observation/assessment to a parent
-app.post('/api/parent/push-record', authenticateToken, async (req, res) => {
-    const { parentEmail, studentName, title, content, type } = req.body;
-    try {
-        const newRecord = new Portfolio({
-            userEmail: req.user.email,
-            sharedWith: parentEmail.toLowerCase(),
-            studentName,
-            projectTitle: title,
-            description: content,
-            type: type || 'observation',
-            timestamp: Date.now()
-        });
-        await newRecord.save();
-
-        // Optional: Send email notification too
-        transporter.sendMail({
-            from: `"Pedagogy" <${process.env.EMAIL_USER}>`,
-            to: parentEmail,
-            subject: `New CBC Record for ${studentName}: ${title}`,
-            html: `<h3>New Record Shared</h3><p>Your child's facilitator has shared a new record: <strong>${title}</strong></p><p>View it now in your <a href="${process.env.APP_URL || 'http://localhost:3000'}/login.html">Parent Portal</a>.</p>`
-        }).catch(e => console.error("Email failed:", e));
-
-        res.json({ message: 'Record pushed to parent dashboard!' });
-    } catch (err) { res.status(500).json({ error: 'Push failed' }); }
-});
-
 
 // ── Portfolio Endpoints ──
 app.get('/api/portfolio', authenticateToken, async (req, res) => {
@@ -1130,6 +1054,15 @@ app.put('/api/portfolio/:id', authenticateToken, async (req, res) => {
 async function startServer() {
     try {
         await connectDB();
+        const cleanupResult = await deleteExpiredChatMessages();
+        if (cleanupResult.deletedCount > 0) {
+            console.log(`Chat retention: deleted ${cleanupResult.deletedCount} message(s) older than 36 hours`);
+        }
+        setInterval(() => {
+            deleteExpiredChatMessages().catch(err => {
+                console.error('Chat retention cleanup failed:', err.message);
+            });
+        }, CHAT_CLEANUP_INTERVAL_MS);
         server.listen(port, () => {
             console.log('Server with Socket.io listening on port', port);
         });
@@ -1166,6 +1099,10 @@ app.post('/api/planner', authenticateToken, async (req, res) => {
 // ── Generate Document (AI) ──
 app.post('/api/generate', authenticateToken, generateRateLimit, async (req, res) => {
     let { documentType, grade, term, subject, strand, subStrand, learningOutcomes, competencies, extendedActivity, extraInstructions, teacherName, schoolName, isTemplate, projectTitle, projectOutcomes, projectTime, resources, previousProgress } = req.body;
+    const weekCount = documentType === 'sow' ? Number(req.body.weekCount === undefined ? 12 : req.body.weekCount) : undefined;
+    if (documentType === 'sow' && (!Number.isInteger(weekCount) || weekCount < 1 || weekCount > 20)) {
+        return res.status(400).json({ error: 'SOW week count must be a whole number from 1 to 20.' });
+    }
     console.log(`[GENERATING] ${documentType} (Template: ${isTemplate}) for ${teacherName} at ${schoolName}`);
     try {
         const user = await User.findOne({ email: req.user.email });
@@ -1211,7 +1148,13 @@ ${user && user.schoolLogo ? `<img src="${user.schoolLogo}" style="max-height:80p
                 checklist: ['No.', 'Learner Name', 'Learning Outcome', 'Observation', 'L', 'P', 'B', 'Date', 'Remarks']
             };
             const cols = hdrs[documentType] || ['Column 1', 'Column 2', 'Column 3'];
-            const rows = Array(12).fill(0).map(() => `<tr>${cols.map(() => `<td style="${TD}height:32px;"></td>`).join('')}</tr>`).join('');
+            const rows = documentType === 'sow'
+                ? Array.from({ length: weekCount * 5 }, (_, index) => {
+                    const week = Math.floor(index / 5) + 1;
+                    const lesson = (index % 5) + 1;
+                    return `<tr>${cols.map((_, column) => `<td style="${TD}height:32px;">${column === 0 ? week : column === 1 ? lesson : ''}</td>`).join('')}</tr>`;
+                }).join('')
+                : Array(12).fill(0).map(() => `<tr>${cols.map(() => `<td style="${TD}height:32px;"></td>`).join('')}</tr>`).join('');
             const tbl = `<table style="${TS}"><thead><tr>${cols.map(c => `<th style="${TH}">${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
             return res.json({ html: `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;">${documentType.toUpperCase()} — BLANK TEMPLATE</h3>${tbl}${sigBlock}`, markdown: 'Template' });
         }
@@ -1238,9 +1181,10 @@ Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Q
 Requirements:
 - CRITICAL: DO NOT use AI generation or automation from scratch. You MUST perform a pure, accurate extraction strictly from the provided OFFICIAL CURRICULUM CONTEXT. Do not hallucinate or invent new content.
 - Focus ONLY on the strands specified for this single Term (${term || 'automatically detected term'}). Do NOT generate for other terms.
-- 12 weeks, at least 2 lessons per week (24+ rows).
+- Generate exactly ${weekCount} weeks and exactly 5 lesson rows per week (${weekCount * 5} rows total). For each week, list lessons 1, 2, 3, 4, and 5 in order; do not omit, add, or merge rows. The first cell must identify its week number and the second cell its lesson number.
 - SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies.
-- Week 7 = Mid-Term Review; Week 12 = End-Term Assessment.
+${weekCount >= 7 ? '- Week 7 includes a Mid-Term Review.' : ''}
+- Week ${weekCount} includes End-Term Assessment.
 - Resources: KICD-approved textbooks, charts, models, locally available materials.
 - Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio.
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
@@ -1257,9 +1201,10 @@ Week | Lesson | Strand | Sub-strand | Specific Learning Outcomes | Key Inquiry Q
 
 Requirements:
 - Focus ONLY on the strands specified for this single Term (${term || 'automatically detected term'}). Do NOT generate for other terms.
-- 12 weeks, at least 2 lessons per week (24+ rows).
+- Generate exactly ${weekCount} weeks and exactly 5 lesson rows per week (${weekCount * 5} rows total). For each week, list lessons 1, 2, 3, 4, and 5 in order; do not omit, add, or merge rows. The first cell must identify its week number and the second cell its lesson number.
 - SLOs start with action verbs (identify, describe, demonstrate, compare) and focus on specific competencies.
-- Week 7 = Mid-Term Review; Week 12 = End-Term Assessment.
+${weekCount >= 7 ? '- Week 7 includes a Mid-Term Review.' : ''}
+- Week ${weekCount} includes End-Term Assessment.
 - Resources: KICD-approved textbooks, charts, models, locally available materials.
 - Assessment: Observation, Oral questions, Written exercise, Practical, Portfolio.
 Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
@@ -1267,6 +1212,10 @@ Table style: ${TS} TH: ${TH} TD: ${TD}${NO_MD}`;
 
             const r = await model.generateContent(prompt);
             const raw = r.response.text().replace(/^```[a-z]*\n?/i, '').replace(/```$/i, '').trim();
+            const sowValidationError = validateSowHtml(raw, weekCount);
+            if (sowValidationError) {
+                return res.status(502).json({ error: `${sowValidationError} Please retry generation.` });
+            }
             html = `${adminHeader}<h3 style="text-align:center;margin-bottom:20px;font-size:15px;">SCHEME OF WORK — ${subject} | ${grade} | Term ${term}</h3>${raw}${sigBlock}`;
         }
 

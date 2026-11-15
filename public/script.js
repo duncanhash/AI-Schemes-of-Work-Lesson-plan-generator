@@ -56,10 +56,6 @@ window.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         const session = await sessionResponse.json();
-        if (session.role === 'parent') {
-            window.location.href = '/parent_dashboard.html';
-            return;
-        }
         localStorage.removeItem('cbc_token');
         userEmail = session.email;
         localStorage.setItem('cbc_email', session.email);
@@ -408,8 +404,10 @@ function toggleGenType(type) {
     // Show/hide mode selectors
     const sowModeToggle = document.getElementById('sow-mode-toggle');
     const lpModeToggle = document.getElementById('lp-mode-toggle');
+    const sowWeekCountGroup = document.getElementById('sow-week-count-group');
     if (sowModeToggle) sowModeToggle.style.display = isSow ? 'flex' : 'none';
     if (lpModeToggle) lpModeToggle.style.display = isSow ? 'none' : 'flex';
+    if (sowWeekCountGroup) sowWeekCountGroup.style.display = isSow ? 'block' : 'none';
 
     // Hide all panels first
     const sowPanels = ['upload', 'template', 'ai'];
@@ -519,6 +517,10 @@ function closeBubble(id) { document.getElementById(`bubble-${id}`).style.display
 async function generateDocument(isTemplate = false) {
     try {
         const type = document.querySelector('input[name="gentype-sow"]:checked').value;
+        const weekCount = Number(document.getElementById('sow-week-count').value);
+        if (type === 'sow' && (!Number.isInteger(weekCount) || weekCount < 1 || weekCount > 20)) {
+            return showToast("Choose a whole number of SOW weeks from 1 to 20.", "Warning", "");
+        }
         let payload = {
             documentType: type,
             teacherName: document.getElementById('profile-teacher').value || 'Facilitator',
@@ -527,6 +529,7 @@ async function generateDocument(isTemplate = false) {
         };
 
         if (type === 'sow') {
+            payload.weekCount = weekCount;
             payload.grade = document.getElementById('gradeSelect-sow').value;
             payload.term = document.getElementById('termSelect-sow').value;
             payload.subject = document.getElementById('sow-subject').value;
@@ -621,9 +624,13 @@ async function generateSowFromCurriculum() {
         const previousProgress = document.getElementById('previousProgress-curriculum').value;
         const holidays = document.getElementById('holidays-curriculum').value;
         let extraInstructions = document.getElementById('extra-curriculum').value || '';
+        const weekCount = Number(document.getElementById('sow-week-count').value);
 
         if (!strandRange) {
             return showToast("Strand Range is required to generate SOW.", "Warning", "");
+        }
+        if (!Number.isInteger(weekCount) || weekCount < 1 || weekCount > 20) {
+            return showToast("Choose a whole number of SOW weeks from 1 to 20.", "Warning", "");
         }
 
         showProgress(20, "Referring to curriculum text...");
@@ -636,6 +643,7 @@ async function generateSowFromCurriculum() {
             term,
             subject,
             strand: strandRange,
+            weekCount,
             previousProgress,
             extraInstructions,
             holidays,
@@ -787,7 +795,6 @@ async function handleAssessmentGeneration() {
 }
 
 // ── Community Chat (Real-time Socket.io) ──
-let currentChatChannel = 'staff';
 let chatSocket = null;
 
 function identifySocket() {
@@ -802,7 +809,7 @@ function initChatSocket() {
 
     chatSocket.on('connect', () => {
         console.log('  Chat socket connected:', chatSocket.id);
-        chatSocket.emit('joinChannel', currentChatChannel);
+        chatSocket.emit('joinChannel', 'staff');
         identifySocket();
     });
 
@@ -813,67 +820,28 @@ function initChatSocket() {
         }
     });
 
-    // Listen for messages on any channel
-    ['staff', 'parent-community'].forEach(ch => {
-        chatSocket.on(`chat:${ch}`, (msg) => {
-            const chatView = document.getElementById('view-chat');
-            const isChatActive = chatView && chatView.classList.contains('active');
-            const isSameChannel = ch === currentChatChannel;
-            if (isChatActive && isSameChannel) {
-                appendChatMessage(msg);
-            } else {
-                // Show notification if it's not our own message
-                if (msg.sender !== userEmail) {
-                    const channelName = ch === 'staff' ? 'Staff Room' : 'Parents Hub';
-                    const senderLabel = msg.senderName || msg.sender.split('@')[0];
-                    showToast(
-                        `${senderLabel}: ${msg.text}`, 
-                        `New Message in ${channelName}`, 
-                        ch === 'staff' ? '' : '',
-                        5000, 
-                        () => {
-                            const chatBtn = document.querySelector('[data-target="view-chat"]');
-                            if (chatBtn) chatBtn.click();
-                            setChatChannel(ch);
-                        }
-                    );
+    chatSocket.on('chat:staff', (msg) => {
+        const chatView = document.getElementById('view-chat');
+        const isChatActive = chatView && chatView.classList.contains('active');
+        if (isChatActive) {
+            appendChatMessage(msg);
+        } else if (msg.sender !== userEmail) {
+            const senderLabel = msg.senderName || msg.sender.split('@')[0];
+            showToast(
+                `${senderLabel}: ${msg.text}`,
+                'New Message in Staff Room',
+                '',
+                5000,
+                () => {
+                    const chatBtn = document.querySelector('[data-target="view-chat"]');
+                    if (chatBtn) chatBtn.click();
                 }
-            }
-        });
+            );
+        }
     });
 
     chatSocket.on('disconnect', () => console.warn('Chat socket disconnected'));
 }
-
-function setChatChannel(chan) {
-    currentChatChannel = chan;
-    const staffBtn = document.getElementById('btn-chan-staff');
-    const parentsBtn = document.getElementById('btn-chan-parents');
-    const mobileStaffBtn = document.getElementById('btn-mobile-chan-staff');
-    const mobileParentsBtn = document.getElementById('btn-mobile-chan-parents');
-
-    if (staffBtn) staffBtn.classList.toggle('active', chan === 'staff');
-    if (parentsBtn) parentsBtn.classList.toggle('active', chan === 'parent-community');
-    if (mobileStaffBtn) mobileStaffBtn.classList.toggle('active', chan === 'staff');
-    if (mobileParentsBtn) mobileParentsBtn.classList.toggle('active', chan === 'parent-community');
-
-    // Update header
-    const title = document.getElementById('current-chat-title');
-    const avatar = document.getElementById('current-chat-avatar');
-    const statusEl = document.getElementById('chat-online-status');
-    if (title && avatar) {
-        title.innerText = chan === 'staff' ? 'Staff Room' : 'Parents Hub';
-        avatar.innerText = chan === 'staff' ? 'S' : 'P';
-        avatar.style.background = chan === 'staff'
-            ? 'linear-gradient(135deg, #7c6bff, #5643e6)'
-            : 'linear-gradient(135deg, #00d4aa, #00a388)';
-    }
-    if (statusEl) statusEl.textContent = chan === 'staff' ? 'Staff & Faculty' : 'Parents Community';
-
-    if (chatSocket) chatSocket.emit('joinChannel', chan);
-    loadChat();
-}
-window.setChatChannel = setChatChannel;
 
 function buildChatBubble(m) {
     const isMine = m.sender === userEmail;
@@ -925,7 +893,7 @@ async function loadChat() {
         if (!container) return;
         container.innerHTML = `<div class="chat-info" style="text-align:center;padding:20px;opacity:0.5;">Loading messages...</div>`;
 
-        const res = await fetch(`/api/chat/${currentChatChannel}`, { headers: {  } });
+        const res = await fetch('/api/chat/staff', { headers: {  } });
         if (res.status === 401 || res.status === 403) return logout();
         const messages = await res.json();
 
@@ -959,7 +927,7 @@ async function sendChatMessage() {
         appendChatMessage(optimistic);
 
         // Send via REST (server will broadcast to all sockets)
-        await fetch(`/api/chat/${currentChatChannel}`, {
+        await fetch('/api/chat/staff', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text })
@@ -1104,7 +1072,6 @@ async function loadPortfolio() {
                     <div class="port-body">
                         <p>${item.description || ''}</p>
                         <div class="port-actions">
-                            <button class="share" onclick="shareWithParent('${item._id}', '${item.studentName}', '${item.projectTitle}', \`${item.description || ''}\`)"> Share</button>
                             <button class="edit" style="background:rgba(255,255,255,0.05); border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:8px; font-weight:600; cursor:pointer;" onclick="openEditPortfolioModal('${item._id}')"> Edit</button>
                             <button class="del" onclick="deletePortfolioEntry('${item._id}')"></button>
                         </div>
@@ -1209,30 +1176,6 @@ window.savePortfolioEdits = async function() {
         showFriendlyError(e);
     }
 };
-
-async function shareWithParent(recordId, studentName, projectTitle, description) {
-    const parentEmail = prompt(`Enter Parent's Email to share ${studentName}'s work:`);
-    if (!parentEmail) return;
-
-    try {
-        const portfolioHtml = `
-            <div style="border:1px solid #ddd; padding:15px; border-radius:10px;">
-                <h3>${projectTitle}</h3>
-                <p><strong>Learner:</strong> ${studentName}</p>
-                <p>${description}</p>
-            </div>
-        `;
-
-        const res = await fetch('/api/share-portfolio', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ parentEmail, studentName, projectTitle, portfolioHtml, recordId })
-        });
-        const data = await res.json();
-        if (res.ok) showToast("Shared successfully!", "Success", "");
-        else showToast(data.error || "Failed to share", "Error", "");
-    } catch (e) { showFriendlyError(e); }
-}
 
 // ── Weekly Planner ──
 const timeSlots = ["08:00 - 08:35", "08:35 - 09:10", "09:10 - 09:45", "10:15 - 10:50", "10:50 - 11:25", "11:25 - 12:00", "14:00 - 14:35"];
@@ -1531,27 +1474,6 @@ async function updateStorageUsage() {
             else bar.style.background = 'linear-gradient(90deg, var(--accent), var(--accent2))';
         }
     } catch (e) { console.error("Storage update error:", e); }
-}
-
-async function pushToParent() {
-    const parentEmail = prompt("Enter Parent's Email to push this record:");
-    const studentName = prompt("Enter Learner's Full Name:");
-    if (!parentEmail || !studentName) return;
-
-    const preview = document.getElementById('preview-area');
-    const title = preview.querySelector('h3') ? preview.querySelector('h3').innerText : "Assessment Record";
-    const content = preview.innerHTML;
-
-    try {
-        const res = await fetch('/api/parent/push-record', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ parentEmail, studentName, title, content })
-        });
-        const data = await res.json();
-        if (res.ok) showToast("Record pushed successfully to Parent's Dashboard!", "Success", "");
-        else showToast(data.error || "Push failed", "Error", "");
-    } catch (e) { showFriendlyError(e); }
 }
 
 // ── SAVED SOW LIBRARY SYSTEM ──
@@ -1875,7 +1797,6 @@ window.addProgressRow = addProgressRow;
 
 async function saveClassProgress() {
     const term = document.getElementById('prog-term').value;
-    const sharedWith = document.getElementById('prog-parent-email').value;
     const tbody = document.getElementById('progress-tbody');
     const rows = tbody.querySelectorAll('tr');
     const studentsData = [];
@@ -1902,11 +1823,10 @@ async function saveClassProgress() {
         const res = await fetch('/api/progress', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ term, sharedWith, studentsData })
+            body: JSON.stringify({ term, studentsData })
         });
         if (res.ok) {
             showToast("Class Progress Record Saved successfully!", "Success", "");
-            document.getElementById('prog-parent-email').value = '';
             tbody.innerHTML = '';
             addProgressRow();
             loadProgressRecords();
@@ -1952,7 +1872,6 @@ async function loadProgressRecords() {
                         <thead><tr style="background:rgba(124,107,255,0.05);"><th style="padding:6px;">Student</th><th style="padding:6px;">Attnd.</th><th style="padding:6px;">Assign.</th><th style="padding:6px;">CAT</th><th style="padding:6px;">Project</th></tr></thead>
                         <tbody>${rows}</tbody>
                     </table>
-                    ${r.sharedWith ? `<div style="font-size:11px; margin-top:10px; color:#3b82f6;">Shared with: ${r.sharedWith}</div>` : ''}
                 </div>
                 `;
             } else {
@@ -1967,7 +1886,6 @@ async function loadProgressRecords() {
                     </div>
                     <div style="font-size:13px; color:var(--accent2); margin-bottom:10px;"><strong>Level:</strong> ${r.rubric}</div>
                     <p style="font-size:12px; color:var(--muted); margin:0;">${r.remarks || 'No remarks.'}</p>
-                    ${r.sharedWith ? `<div style="font-size:11px; margin-top:10px; color:#3b82f6;">Shared with: ${r.sharedWith}</div>` : ''}
                 </div>
                 `;
             }

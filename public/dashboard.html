@@ -25,7 +25,7 @@
         <aside class="sidebar" id="mainSidebar">
             <div class="sidebar-header">
                 <div class="sidebar-brand">
-                    <img class="sidebar-brand-icon" src="/logo.svg" alt="Pedagogy">
+                    <img class="sidebar-brand-icon" src="/images/logo.svg" alt="Pedagogy">
                     <div class="sidebar-brand-text">
                         <h2 class="logo">PEDAGOGY</h2>
                         <p id="userEmailDisplay">Loading...</p>
@@ -127,6 +127,10 @@
                         <button class="mode-btn" id="btn-upload-sow" onclick="setSowMode('upload')"> Upload Curriculum</button>
                         <button class="mode-btn active" id="btn-template-sow" onclick="setSowMode('template')"> Blank Template</button>
                         <button class="mode-btn" id="btn-ai-sow" onclick="setSowMode('ai')"> Full AI Generate</button>
+                    </div>
+                    <div class="input-group" id="sow-week-count-group" style="margin-top:14px;">
+                        <label for="sow-week-count">Number of weeks (1-20)</label>
+                        <input type="number" id="sow-week-count" min="1" max="20" step="1" value="12" style="max-width:180px;">
                     </div>
 
                     <!-- ── LP MODE TABS (hidden until Lesson Plan radio is selected) ── -->
@@ -467,8 +471,8 @@
             <!-- ── MWALIMU COMMUNITY CHAT ── -->
             <section id="view-chat" class="view-section">
                 <div class="hero" style="margin-bottom:20px;">
-                    <h1>Pedagogy Connect</h1>
-                    <p>Engage with facilitators or share updates with parents.</p>
+                    <h1>Teacher Community</h1>
+                    <p>Connect and share ideas with fellow teachers.</p>
                 </div>
                 <div class="chat-app-container card"
                     style="flex:1; padding:0; display:flex; flex-direction:row; overflow:hidden; border-radius:24px;">
@@ -476,10 +480,10 @@
                     <!-- Chat Sidebar -->
                     <div class="chat-sidebar">
                         <div class="chat-sidebar-header">
-                            <h3>Communities</h3>
+                            <h3>Staff Room</h3>
                         </div>
                         <div class="chat-channels-list">
-                            <div class="chat-channel-item active" id="btn-chan-staff" onclick="setChatChannel('staff')">
+                            <div class="chat-channel-item active" id="btn-chan-staff">
                                 <div class="channel-avatar"
                                     style="background: linear-gradient(135deg, #7c6bff, #5643e6);"></div>
                                 <div class="channel-info">
@@ -487,23 +491,11 @@
                                     <p>General discussions...</p>
                                 </div>
                             </div>
-                            <div class="chat-channel-item" id="btn-chan-parents" onclick="setChatChannel('parent-community')">
-                                <div class="channel-avatar"
-                                    style="background: linear-gradient(135deg, #00d4aa, #00a388);"></div>
-                                <div class="channel-info">
-                                    <h4>Parents Hub</h4>
-                                    <p>Announcements &amp; feedback</p>
-                                </div>
-                            </div>
                         </div>
                     </div>
 
                     <!-- Chat Main -->
                     <div class="chat-main">
-                        <div class="chat-mobile-toggle">
-                            <button id="btn-mobile-chan-staff" class="active" onclick="setChatChannel('staff')"> Staff Room</button>
-                            <button id="btn-mobile-chan-parents" onclick="setChatChannel('parent-community')"> Parents Hub</button>
-                        </div>
                         <div class="chat-main-header">
                             <div class="channel-avatar" id="current-chat-avatar"
                                 style="background: linear-gradient(135deg, #7c6bff, #5643e6);"></div>
@@ -662,7 +654,6 @@
                                 <option value="Term 2">Term 2</option>
                                 <option value="Term 3">Term 3</option>
                             </select>
-                            <input type="email" id="prog-parent-email" placeholder="Parent Email (to share)" style="padding:6px; margin-left:10px; border-radius:6px; background:var(--bg); border:1px solid var(--border); color:var(--text);">
                         </div>
                     </div>
                     
@@ -710,7 +701,6 @@
             </div>
             <div class="download-bar" id="download-bar" style="display:none;">
                 <button class="btn-primary save-lib" id="btn-save-sow-lib" onclick="saveSOWToLibrary()" style="display:none;"> Save SOW to Library</button>
-                <button class="btn-primary push-parent" onclick="pushToParent()"> Push to Parent</button>
                 <button class="btn-primary download-word" onclick="downloadDocx()"> Download Word</button>
                 <button class="btn-primary download-pdf" onclick="downloadPDF()"> Download PDF</button>
                 <button class="btn-primary print-doc" onclick="printDocument()"> Print</button>
